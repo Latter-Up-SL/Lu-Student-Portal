@@ -971,64 +971,119 @@ async function alertsUI() {
   const defaultFollowupSubject = "Reminder: {{role_name}} this week";
   const defaultFollowupBody = "Hi {{member_name}},\n\nThis is a reminder that you are assigned to {{role_name}} for the week of {{week_start}}.\n\nOur next meeting is on {{meeting_date}}.\n\nThank you for serving!";
   const dayOptions = (selected, followRotation = false) => `${followRotation ? `<option value="" ${selected == null ? "selected" : ""}>Follow the role rotation day</option>` : ""}${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${selected === index ? "selected" : ""}>${day}</option>`).join("")}`;
-  app.innerHTML = tabs() + `<header class="admin-page-intro"><span class="admin-page-kicker">MESSAGING CENTER</span><h1>Email alerts</h1><p>Manage Photo Challenge notifications and the weekly Student Leadership emails from one place.</p><div class="admin-feature-pills"><span>Photo submissions</span><span>Weekly assignments</span><span>Test delivery</span></div></header><form id="al" class="admin-schedule admin-email-card"><details class="photo-email-settings" open>
-    <summary><h3>Email alerts for new photos</h3></summary>
-    <p><small>When students or visitors submit photos, valid @latterup.org addresses in your selected audience get one email (at most every 5 minutes) saying how many are waiting. Test emails go only to your account. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
-    ${error ? `<p class="auth-error">${esc(error.message)}${/photo_email_subject|photo_email_body/i.test(error.message) ? " Run update-16-photo-email-templates.sql in Supabase." : " Run update-5b-email-alerts.sql first."}</p>` : ""}
-    <label class="chk"><input type="checkbox" name="enabled" ${c?.enabled ? "checked" : ""}> Send email alerts</label>
-    <label>Photo Challenge notification recipients
-      <select name="photo_alert_audience">
-        <option value="all" ${(c?.photo_alert_audience || "all") === "all" ? "selected" : ""}>Admins and Student Leadership</option>
-        <option value="leaders" ${c?.photo_alert_audience === "leaders" ? "selected" : ""}>Student Leadership only</option>
-        <option value="off" ${c?.photo_alert_audience === "off" ? "selected" : ""}>Turn off Photo Challenge notifications</option>
-      </select>
-    </label>
-    <label>Email subject<input name="photo_email_subject" maxlength="200" value="${esc(c?.photo_email_subject || defaultSubject)}" required></label>
-    <label>Email message<textarea name="photo_email_body" rows="8" maxlength="10000" required>${esc(c?.photo_email_body || defaultBody)}</textarea>
-      <small>Available placeholders: <code>{{photo_count}}</code> (for example, “2 new photos”), <code>{{count}}</code> (number only), <code>{{photo_list}}</code> (names and themes), and <code>{{review_url}}</code>.</small>
-    </label>
-    <button class="auth-btn alt" type="button" id="al-template-defaults">Restore default message</button>
-    <label>Google Apps Script web app URL<input name="url" value="${esc(c?.webhook_url || "")}" placeholder="https://script.google.com/macros/s/…/exec"></label>
-    <label>Secret phrase <small>Must match the SECRET you set in the script</small><input name="secret" type="password" value="${esc(c?.secret || "")}" autocomplete="off"></label>
-    <label>Your site address <small>Used for the link inside the email</small><input name="site" value="${esc(c?.site_url || location.origin)}"></label>
-    <div><button class="auth-btn" type="submit">Save</button> <button class="auth-btn alt" type="button" id="al-test">Send a test email</button> <button class="auth-btn alt" type="button" id="al-check">Check delivery status</button></div>
-    <small id="al-msg">${c?.last_sent_at ? "Last email requested " + esc(new Date(c.last_sent_at).toLocaleString()) + (c.last_status ? ", Google replied " + c.last_status : "") : ""}</small>
-  </details></form>`;
+  const statusPill = (label, on, detail) => `<div class="alert-stat ${on ? "is-on" : "is-off"}"><span class="alert-stat-dot"></span><div><b>${label}</b><small>${detail}</small></div></div>`;
+  const lastSent = c?.last_sent_at ? new Date(c.last_sent_at).toLocaleString() : "No alert sent yet";
+  app.innerHTML = tabs() + `<div class="alert-intro"><div><h2>Email alerts</h2><p>Manage Photo Challenge notifications and weekly Student Leadership emails from one place.</p></div></div>
+    <div class="alert-stats">
+      ${statusPill("Photo alerts", !!c?.enabled && (c?.photo_alert_audience || "all") !== "off", c?.enabled ? (c?.photo_alert_audience === "leaders" ? "Student Leadership only" : c?.photo_alert_audience === "off" ? "No recipients" : "Admins and Student Leadership") : "Disabled")}
+      ${statusPill("Weekly role emails", !!roleEmailSettings?.enabled, roleEmailError ? "Needs setup" : roleEmailSettings?.enabled ? "Enabled" : "Disabled")}
+      <div class="alert-stat"><span class="alert-stat-ico">${LUIcon("clock", 18)}</span><div><b>Last alert sent</b><small>${esc(lastSent)}</small></div></div>
+    </div>
+    <form id="al" class="alert-card">
+      <details class="photo-email-disclosure">
+        <summary class="alert-card-head">
+          <span class="alert-ico">${LUIcon("camera", 22)}</span>
+          <span class="alert-card-title"><strong>New photo alerts</strong><small>When students or visitors submit photos, people in your chosen audience get one email (at most every 5 minutes) saying how many are waiting for approval.</small></span>
+          <label class="switch chk"><input type="checkbox" name="enabled" aria-label="Enable Photo Challenge email alerts" ${c?.enabled ? "checked" : ""}><span class="switch-track" aria-hidden="true"></span><span class="switch-label">Send alerts</span></label>
+        </summary>
+        ${error ? `<p class="auth-error">${esc(error.message)}${/photo_email_subject|photo_email_body/i.test(error.message) ? " Run update-16-photo-email-templates.sql in Supabase." : " Run update-5b-email-alerts.sql first."}</p>` : ""}
+        <div class="alert-section">
+          <h4 class="alert-section-title">Recipients</h4>
+          <label>Photo Challenge notification recipients
+            <select name="photo_alert_audience">
+              <option value="all" ${(c?.photo_alert_audience || "all") === "all" ? "selected" : ""}>Admins and Student Leadership</option>
+              <option value="leaders" ${c?.photo_alert_audience === "leaders" ? "selected" : ""}>Student Leadership only</option>
+              <option value="off" ${c?.photo_alert_audience === "off" ? "selected" : ""}>Turn off Photo Challenge notifications</option>
+            </select>
+          </label>
+        </div>
+        <div class="alert-section">
+          <h4 class="alert-section-title">Message</h4>
+          <label>Email subject<input name="photo_email_subject" maxlength="200" value="${esc(c?.photo_email_subject || defaultSubject)}" required></label>
+          <label>Email message<textarea name="photo_email_body" rows="8" maxlength="10000" required>${esc(c?.photo_email_body || defaultBody)}</textarea>
+            <small>Placeholders: <code>{{photo_count}}</code> “2 new photos” · <code>{{count}}</code> number only · <code>{{photo_list}}</code> names and themes · <code>{{review_url}}</code> link to the review page.</small>
+          </label>
+          <button class="auth-btn alt" type="button" id="al-template-defaults">Restore default message</button>
+        </div>
+        <details class="alert-section alert-connection">
+          <summary><span class="alert-section-title">Delivery connection</span><span class="alert-connection-hint">Apps Script URL, secret, and site address</span></summary>
+          <div class="alert-grid">
+            <label>Google Apps Script web app URL<input name="url" value="${esc(c?.webhook_url || "")}" placeholder="https://script.google.com/macros/s/.../exec"></label>
+            <label>Secret phrase <small>Must match the SECRET you set in the script</small><input name="secret" type="password" value="${esc(c?.secret || "")}" autocomplete="off"></label>
+            <label>Your site address <small>Used for the link inside the email</small><input name="site" value="${esc(c?.site_url || location.origin)}"></label>
+          </div>
+          <p class="alert-hint">Setup steps are at the top of <b>email-alerts.gs</b>. Test emails go only to your account.</p>
+        </details>
+        <footer class="alert-actions">
+          <button class="auth-btn" type="submit">Save photo email settings</button>
+          <button class="auth-btn alt" type="button" id="al-test">Send a test email to my account</button>
+          <button class="auth-btn alt" type="button" id="al-check">Check delivery status</button>
+          <small id="al-msg" class="alert-status" role="status">${c?.last_sent_at ? "Last email requested " + esc(new Date(c.last_sent_at).toLocaleString()) + (c.last_status ? ", Google replied " + c.last_status : "") : ""}</small>
+        </footer>
+      </details>
+    </form>`;
   const roleEmailHost = document.createElement("section");
-  roleEmailHost.className = "admin-schedule admin-email-card role-email-card";
-  roleEmailHost.innerHTML = `<div class="admin-section-heading"><span class="admin-section-icon" aria-hidden="true">✉</span><div><span class="admin-section-kicker">AUTOMATED MESSAGES</span><h2>Weekly Student Leadership role emails</h2></div></div>
-    <p>Emails are sent to members assigned a role for that rotation week. They use the Apps Script URL and secret configured above. Times use Eastern local time (EST/EDT) and follow daylight saving time. Delivery may take a few minutes after the scheduled time.</p>
+  roleEmailHost.className = "alert-card";
+  roleEmailHost.innerHTML = `<header class="alert-card-head">
+      <span class="alert-ico">${LUIcon("bell", 22)}</span>
+      <div class="alert-card-title"><h3>Weekly Student Leadership role emails</h3>
+        <p>Sent to members assigned a role that rotation week, using the Apps Script connection above. Times are Eastern (EST/EDT, follows daylight saving) and may arrive a few minutes late.</p></div>
+    </header>
     ${roleEmailError ? `<p class="auth-error">Role email settings could not be loaded: ${esc(roleEmailError.message)}. ${roleEmailSetupHint}</p>` : ""}
     ${!roleEmailError ? `<form id="role-email-form">
-      <label class="chk"><input type="checkbox" name="enabled" ${roleEmailSettings?.enabled ? "checked" : ""}> Send weekly role emails</label>
-      <details class="role-email-initial">
-        <summary><h4>Initial email</h4></summary>
-        <label>Send on<select name="initial_day">${dayOptions(roleEmailSettings?.initial_day ?? null, true)}</select></label>
-        <label>Send time (Eastern)<input name="initial_time" type="time" value="${esc((roleEmailSettings?.initial_time || "08:30").slice(0, 5))}" required></label>
-        <label>Email subject<input name="initial_subject" maxlength="200" value="${esc(roleEmailSettings?.initial_subject || defaultRoleSubject)}" required></label>
-        <label>Email message<textarea name="initial_body" rows="6" maxlength="10000" required>${esc(roleEmailSettings?.initial_body || defaultRoleBody)}</textarea></label>
-        <h4>Follow-up email</h4>
-        <label class="chk"><input type="checkbox" name="followup_enabled" ${roleEmailSettings?.followup_enabled !== false ? "checked" : ""}> Send a follow-up email</label>
-        <label>Follow-up day<select name="followup_day">${dayOptions(roleEmailSettings?.followup_day ?? 2)}</select></label>
-        <label>Follow-up time (Eastern)<input name="followup_time" type="time" value="${esc((roleEmailSettings?.followup_time || "08:30").slice(0, 5))}" required></label>
-      </details>
-      <div class="role-template-intro"><h3>Role-specific email templates</h3><p>Choose a role to edit its initial and follow-up messages. Keeping these collapsed makes the schedule easier to scan.</p><small>Test emails go only to your signed-in email and do not change the weekly schedule.</small></div>
-      <div id="role-email-templates">${(rolesResult.data || []).map(role => {
+      <div class="alert-section alert-master">
+        <label class="switch chk"><input type="checkbox" name="enabled" ${roleEmailSettings?.enabled ? "checked" : ""}><span class="switch-track" aria-hidden="true"></span><span class="switch-label">Send weekly role emails</span></label>
+      </div>
+      <div class="alert-section">
+        <h4 class="alert-section-title">${LUIcon("clock", 16)} Schedule</h4>
+        <details class="alert-defaults role-email-initial">
+          <summary><span class="alert-defaults-title"><strong>Initial email and follow-up schedule</strong><small>Set delivery days and times</small></span></summary>
+          <div class="alert-schedule">
+            <div class="alert-schedule-col">
+              <h5>Initial email</h5>
+              <label>Send on<select name="initial_day">${dayOptions(roleEmailSettings?.initial_day ?? null, true)}</select></label>
+              <label>Send time (Eastern)<input name="initial_time" type="time" value="${esc((roleEmailSettings?.initial_time || "08:30").slice(0, 5))}" required></label>
+            </div>
+            <div class="alert-schedule-col">
+              <h5>Follow-up email</h5>
+              <label class="switch chk"><input type="checkbox" name="followup_enabled" ${roleEmailSettings?.followup_enabled !== false ? "checked" : ""}><span class="switch-track" aria-hidden="true"></span><span class="switch-label">Send a follow-up</span></label>
+              <label>Send on<select name="followup_day">${dayOptions(roleEmailSettings?.followup_day ?? 2)}</select></label>
+              <label>Send time (Eastern)<input name="followup_time" type="time" value="${esc((roleEmailSettings?.followup_time || "08:30").slice(0, 5))}" required></label>
+            </div>
+          </div>
+        </details>
+      </div>
+      <div class="alert-section">
+        <h4 class="alert-section-title">Messages by role</h4>
+        <p class="alert-hint">Each role has its own initial and follow-up email. Test buttons send the current text only to your signed-in email and do not change the schedule.</p>
+        <div id="role-email-templates" class="alert-roles">${(rolesResult.data || []).map(role => {
         const template = roleTemplatesById.get(role.id) || {};
-        return `<details class="leadership-role-management" data-role-email="${role.id}">
-          <summary>${esc(role.name)}</summary>
-          <label>Initial email subject<input data-role-initial-subject maxlength="200" value="${esc(template.initial_subject || defaultRoleSubject)}" required></label>
-          <label>Initial email message<textarea data-role-initial-body rows="5" maxlength="10000" required>${esc(template.initial_body || defaultRoleBody)}</textarea></label>
-          <button class="auth-btn alt" type="button" data-role-test="initial">Send initial email test to my email</button>
-          <small data-role-test-message="initial" role="status"></small>
-          <label>Follow-up email subject<input data-role-followup-subject maxlength="200" value="${esc(template.followup_subject || defaultFollowupSubject)}" required></label>
-          <label>Follow-up email message<textarea data-role-followup-body rows="5" maxlength="10000" required>${esc(template.followup_body || defaultFollowupBody)}</textarea></label>
-          <button class="auth-btn alt" type="button" data-role-test="followup">Send follow-up test to my email</button>
-          <small data-role-test-message="followup" role="status"></small>
+        return `<details class="alert-role leadership-role-management" data-role-email="${role.id}">
+          <summary><span class="alert-role-name">${esc(role.name)}</span><span class="alert-role-count">Edit messages</span></summary>
+          <div class="alert-role-cols">
+            <div class="alert-role-col">
+              <h5>Initial email</h5>
+              <label>Email subject<input data-role-initial-subject maxlength="200" value="${esc(template.initial_subject || defaultRoleSubject)}" required></label>
+              <label>Email message<textarea data-role-initial-body rows="5" maxlength="10000" required>${esc(template.initial_body || defaultRoleBody)}</textarea></label>
+              <button class="auth-btn alt" type="button" data-role-test="initial">Send initial email test to my email</button>
+              <small data-role-test-message="initial" role="status"></small>
+            </div>
+            <div class="alert-role-col">
+              <h5>Follow-up email</h5>
+              <label>Email subject<input data-role-followup-subject maxlength="200" value="${esc(template.followup_subject || defaultFollowupSubject)}" required></label>
+              <label>Email message<textarea data-role-followup-body rows="5" maxlength="10000" required>${esc(template.followup_body || defaultFollowupBody)}</textarea></label>
+              <button class="auth-btn alt" type="button" data-role-test="followup">Send follow-up test to my email</button>
+              <small data-role-test-message="followup" role="status"></small>
+            </div>
+          </div>
         </details>`;
       }).join("") || "<p>No chart roles have been added yet.</p>"}</div>
-      <small>Template placeholders (hover over each one for details): <code title="Replaced with the assigned member's display name. Use it as plain text in the subject or message, such as Hi {{member_name}},.">{{member_name}}</code>, <code title="Replaced with the exact name of the assigned Student Leadership chart role. Use it wherever the role and any role-specific instructions or links belong.">{{role_name}}</code>, <code title="Replaced with the rotation week's date, formatted as Month day, year (for example, November 2, 2026). Use it to identify when the assignment applies.">{{week_start}}</code>, and <code title="Replaced with the meeting date from Admin → Student Leadership, formatted as Month day, year. If no meeting date has been set, it says a date to be announced.">{{meeting_date}}</code>. Write the email as plain text: use a short subject, and separate paragraphs with blank lines. Put any link on its own line. Placeholders are replaced when each email is sent; no HTML formatting is needed. Adding a chart role automatically adds it here with default messages.</small>
-      <div><button class="auth-btn" type="submit">Save role email settings</button></div><small id="role-email-msg"></small>
+        <p class="alert-hint">Template placeholders (hover over each one for details): <code title="Replaced with the assigned member's display name. Use it as plain text in the subject or message, such as Hi {{member_name}},.">{{member_name}}</code>, <code title="Replaced with the exact name of the assigned Student Leadership chart role. Use it wherever the role and any role-specific instructions or links belong.">{{role_name}}</code>, <code title="Replaced with the rotation week's date, formatted as Month day, year (for example, November 2, 2026). Use it to identify when the assignment applies.">{{week_start}}</code>, and <code title="Replaced with the meeting date from Admin → Student Leadership, formatted as Month day, year. If no meeting date has been set, it says a date to be announced.">{{meeting_date}}</code>. Write the email as plain text: use a short subject, and separate paragraphs with blank lines. Put any link on its own line. Placeholders are replaced when each email is sent; no HTML formatting is needed. Adding a chart role automatically adds it here with default messages.</p>
+      </div>
+      <footer class="alert-actions">
+        <button class="auth-btn" type="submit">Save role email settings</button>
+        <small id="role-email-msg" class="alert-status" role="status"></small>
+      </footer>
     </form>` : ""}`;
   document.getElementById("app").appendChild(roleEmailHost);
   wire();
