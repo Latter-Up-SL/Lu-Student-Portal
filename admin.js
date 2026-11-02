@@ -1286,10 +1286,78 @@ async function homeTabUI(generation = activeViewGeneration) {
   ]);
 }
 
+function parseCsvRows(text) {
+  const rows = [];
+  let fields = [], field = "", quoted = false;
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index];
+    if (quoted) {
+      if (character === '"' && text[index + 1] === '"') {
+        field += '"';
+        index++;
+      } else if (character === '"') {
+        quoted = false;
+      } else {
+        field += character;
+      }
+    } else if (character === '"' && field.length === 0) {
+      quoted = true;
+    } else if (character === ",") {
+      fields.push(field);
+      field = "";
+    } else if (character === "\n" || character === "\r") {
+      fields.push(field);
+      rows.push(fields);
+      fields = [];
+      field = "";
+      if (character === "\r" && text[index + 1] === "\n") index++;
+    } else {
+      field += character;
+    }
+  }
+  if (quoted) throw new Error("The CSV has an unclosed quoted field.");
+  if (field.length || fields.length) {
+    fields.push(field);
+    rows.push(fields);
+  }
+  return rows;
+}
+
+function parseStudentNamesCsv(text) {
+  const rows = parseCsvRows(text.replace(/^\uFEFF/, ""));
+  const header = rows[0]?.slice(0, 3).map(value => value.trim().toLowerCase()) || [];
+  const hasHeader = header[0]?.includes("first")
+    && header[1]?.includes("last")
+    && header[2]?.includes("email");
+  const students = [], errors = [], emailLines = new Map();
+  for (let index = hasHeader ? 1 : 0; index < rows.length; index++) {
+    const [rawFirst = "", rawLast = "", rawEmail = ""] = rows[index];
+    const firstName = rawFirst.trim(), lastName = rawLast.trim(), email = rawEmail.trim().toLowerCase();
+    if (!firstName && !lastName && !email) continue;
+    const line = index + 1;
+    if (!firstName || !lastName || !/^[^\s@,]+@[^\s@,]+\.[^\s@,.]+$/.test(email)) {
+      errors.push(`Row ${line}: enter a first name, last name, and valid email in columns A, B, and C.`);
+      continue;
+    }
+    if (firstName.length > 100 || lastName.length > 100 || email.length > 320) {
+      errors.push(`Row ${line}: names must be at most 100 characters and email at most 320 characters.`);
+      continue;
+    }
+    if (emailLines.has(email)) {
+      errors.push(`Rows ${emailLines.get(email)} and ${line}: duplicate email ${email}.`);
+      continue;
+    }
+    emailLines.set(email, line);
+    students.push({ first_name: firstName, last_name: lastName, email });
+  }
+  if (students.length > 5000) errors.push("The CSV exceeds the 5,000 student import limit.");
+  return { students, errors };
+}
+
 async function studentsUI(notice = "", generation = activeViewGeneration) {
   const [{ data, error }, { data: leaderRows, error: leaderError }] = await Promise.all([
     sb.rpc("list_students"),
-    sb.from("leadership").select("email").order("email"),
+    sb.from("leadership_chart_members").select("email,display_name").order("email"),
   ]);
   if (!isCurrentView(generation)) return;
   const students = data ?? [];
@@ -1298,7 +1366,7 @@ async function studentsUI(notice = "", generation = activeViewGeneration) {
     (leaderRows || []).filter(member => !knownEmails.has(member.email.toLowerCase())).forEach(member => {
       students.push({
         email: member.email,
-        full_name: "",
+        full_name: member.display_name || "",
         last_sign_in_at: null,
         must_change_password: false,
         admin_role: false,
@@ -1312,6 +1380,7 @@ async function studentsUI(notice = "", generation = activeViewGeneration) {
   app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has signed in to the portal, plus Student Leadership members added by email before their first sign-in. New accounts are created automatically when they sign in with Google. Removing a student permanently deletes their account; they can create it again by signing in with Google.</small></p>${loadError ? `<p class="auth-error">${esc(loadError.message)}, check update-6-students-list.sql and update-5a-leadership-team.sql.</p>` : ""}
     ${notice ? `<p class="role-note" role="status">${esc(notice)}</p>` : ""}
     ${ROLE === "admin" ? `<form id="st-add-leader"><h4>Add Student Leadership access before first sign-in</h4><label>Email address<input name="email" type="email" placeholder="name@latterup.org" required></label><button class="auth-btn" type="submit">Add Student Leadership member</button><small id="st-add-leader-message"></small></form>` : ""}
+    ${ROLE === "admin" ? `<form id="st-import-names"><h3>Import student names from Google Sheets</h3><p><small>In Google Sheets, choose File → Download → Comma-separated values (.csv). Keep first name in column A, last name in B, and email in C; a header row is optional. This updates names for matching accounts and saves names for students who sign in later. It does not create accounts or remove students omitted from the sheet.</small></p><label>Student directory CSV<input name="file" type="file" accept=".csv,text/csv" required></label><button class="auth-btn" type="submit">Import names</button><small id="st-import-names-message" role="status"></small></form>` : ""}
     <div class="student-admin-tools"><h3>Student directory</h3><label>Search students<input id="st-q" type="search" placeholder="Type a name or email"></label></div><p><small id="st-count"></small></p><div id="st-list"></div><div class="student-admin-danger-zone"><h4>Bulk actions</h4><p><small>These actions affect student accounts and cannot be undone.</small></p><button class="auth-btn alt" type="button" id="st-remove-all" ${loadError || removableCount === 0 ? "disabled" : ""}>Remove all students (${removableCount})</button></div>`;
   wire();
   const list = document.getElementById("st-list"), count = document.getElementById("st-count");
@@ -1376,6 +1445,37 @@ async function studentsUI(notice = "", generation = activeViewGeneration) {
       return;
     }
     if (cur === "_s") await studentsUI(`${email} now has Student Leadership access. They can sign in with Google when ready.`);
+  };
+  const importNamesForm = document.getElementById("st-import-names");
+  if (importNamesForm) importNamesForm.onsubmit = async event => {
+    event.preventDefault();
+    const form = event.target, file = form.elements.file.files[0];
+    const button = form.querySelector('[type="submit"]');
+    const message = document.getElementById("st-import-names-message");
+    if (!file) { message.textContent = "Choose a CSV exported from Google Sheets."; return; }
+    if (file.size > 5 * 1024 * 1024) { message.textContent = "The CSV must be 5 MB or smaller."; return; }
+    button.disabled = true;
+    message.textContent = "Checking CSV rows…";
+    try {
+      const { students: importedStudents, errors: csvErrors } = parseStudentNamesCsv(await file.text());
+      if (csvErrors.length) {
+        message.textContent = csvErrors.slice(0, 8).join(" ") + (csvErrors.length > 8 ? ` And ${csvErrors.length - 8} more issue(s).` : "");
+        return;
+      }
+      if (!importedStudents.length) { message.textContent = "No student rows were found in the CSV."; return; }
+      if (!confirm(`Import names for ${importedStudents.length} students? Matching students' current names will be replaced; names for students who sign in later will also be applied.`)) return;
+      message.textContent = `Importing ${importedStudents.length} student names…`;
+      const { data: importedCount, error: importError } = await sb.rpc("import_student_directory_names", { p_students: importedStudents });
+      if (importError) {
+        message.textContent = `Could not import student names: ${importError.message}${importError.message.includes("import_student_directory_names") ? " Run update-22-student-directory-names.sql in Supabase SQL Editor." : ""}`;
+        return;
+      }
+      await studentsUI(`Imported names for ${importedCount} students.`);
+    } catch (importError) {
+      message.textContent = `Could not read the CSV: ${importError.message || importError}`;
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
   };
   document.getElementById("st-q").oninput = paint;
   paint();
