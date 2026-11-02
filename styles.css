@@ -722,6 +722,10 @@ section { padding: 64px 0; }
 .adm nav [draggable="true"]{cursor:grab}
 .adm nav [draggable="true"]:active{cursor:grabbing}
 .adm nav .dragging{opacity:.45}
+.admin-tab-loading{display:flex;align-items:center;gap:.7rem;min-height:8rem;margin:0;padding:1.25rem;color:var(--stone);font-weight:600}
+.admin-tab-loading::before{content:"";width:1.1rem;height:1.1rem;border:2px solid var(--stone-line);border-top-color:var(--gold-deep);border-radius:50%;animation:admin-tab-spin .8s linear infinite}
+@keyframes admin-tab-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.admin-tab-loading::before{animation:none;border-top-color:var(--stone)}}
 .adm .row{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:.7rem 0;border-bottom:1px solid var(--stone)}
 .adm .student-admin-row{justify-content:flex-start;flex-wrap:wrap}
 .student-admin-row>span:first-child{flex:1;min-width:240px}

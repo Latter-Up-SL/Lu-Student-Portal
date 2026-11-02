@@ -10,6 +10,11 @@ const DEFAULT_ADMIN_TAB_ORDER = ["announcements", "videos", "themes", "_h", "hom
 let cur = "announcements", ROLE = "student";
 let ADMIN_TAB_ORDER = DEFAULT_ADMIN_TAB_ORDER.slice(), ADMIN_TAB_ORDER_ERROR = "";
 let leadershipAssignmentsOpen = false;
+const ADMIN_TAB_CACHE_TTL = 5 * 60 * 1000;
+const adminTabViews = new Map();
+let activeViewGeneration = 0;
+let activeViewLoadedAt = 0;
+const isCurrentView = generation => generation === activeViewGeneration;
 const hasGoogleIdentity = user => user?.app_metadata?.provider === "google"
   || (Array.isArray(user?.app_metadata?.providers) && user.app_metadata.providers.includes("google"))
   || user?.identities?.some(identity => identity.provider === "google");
@@ -110,7 +115,7 @@ function tabs() {
     (ROLE === "leader" ? '<p class="role-note"><small>Student Leadership access: you can add announcements, videos and photo themes, and approve or reject photos.</small></p>' : "");
 }
 function wire() {
-  app.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { cur = b.dataset.t; show(); });
+  app.querySelectorAll("[data-t]").forEach(b => b.onclick = () => navigateToTab(b.dataset.t));
   if (ROLE !== "admin") return;
   const nav = app.querySelector(".adm nav");
   if (!nav) return;
@@ -142,28 +147,74 @@ function wire() {
       return;
     }
     ADMIN_TAB_ORDER = order;
+    adminTabViews.clear();
   };
 }
 
-async function show(editRow) {
+function renderCurrentTab(generation) {
+  if (cur === "home") return homeTabUI(generation);
+  if (cur === "_s") return studentsUI("", generation);
+  if (cur === "_h") return studentLeadershipUI(generation);
+  if (cur === "_a") return peopleUI("admins", "Admins", "Admins can do everything on the site. The person needs to sign in with Google once to create their student account first.", "Give admin access to", "Make admin", generation);
+  if (cur === "_n") return alertsUI(generation);
+  return listUI(cur, app, generation);
+}
+function showLoadingState() {
+  const nav = tabs();
+  const label = nav.match(new RegExp(`data-t="${cur}"[^>]*>([^<]+)`))?.[1] || "tab";
+  app.innerHTML = nav + `<p class="admin-tab-loading" role="status">Loading ${esc(label)}…</p>`;
+  wire();
+}
+async function show() {
   if (ROLE !== "admin" && !["announcements", "videos", "themes"].includes(cur)) cur = "announcements";
-  if (cur === "home") return homeTabUI();
-  if (cur === "_s") return studentsUI();
-  if (cur === "_h") return studentLeadershipUI();
-  if (cur === "_a") return peopleUI("admins", "Admins", "Admins can do everything on the site. The person needs to sign in with Google once to create their student account first.", "Give admin access to", "Make admin");
-  if (cur === "_n") return alertsUI();
-  return listUI(cur, app);
+  const generation = ++activeViewGeneration;
+  activeViewLoadedAt = 0;
+  adminTabViews.delete(cur);
+  showLoadingState();
+  await renderCurrentTab(generation);
+  if (generation === activeViewGeneration) activeViewLoadedAt = Date.now();
+}
+function saveCurrentTabView() {
+  if (!app.childNodes.length) return;
+  const fragment = document.createDocumentFragment();
+  while (app.firstChild) fragment.appendChild(app.firstChild);
+  adminTabViews.set(cur, { fragment, loadedAt: activeViewLoadedAt });
+}
+function navigateToTab(tab) {
+  if (tab === cur) return;
+  saveCurrentTabView();
+  cur = tab;
+  const generation = ++activeViewGeneration;
+  const cached = adminTabViews.get(cur);
+  if (cached) {
+    adminTabViews.delete(cur);
+    if (T[cur]) LT = cur;
+    else if (cur === "home") LT = "faq";
+    app.replaceChildren(cached.fragment);
+    activeViewLoadedAt = cached.loadedAt;
+    wire();
+    if (Date.now() - cached.loadedAt < ADMIN_TAB_CACHE_TTL) return;
+  } else {
+    activeViewLoadedAt = 0;
+    showLoadingState();
+  }
+  renderCurrentTab(generation).then(() => {
+    if (generation === activeViewGeneration) activeViewLoadedAt = Date.now();
+  });
 }
 
 let LT = "announcements";
-async function listUI(table, host) {
+async function listUI(table, host, generation = activeViewGeneration) {
+  const parentTab = host === app ? table : cur;
   LT = table; const t = T[table];
   const { data, error: listError } = await sb.from(table).select("*").order(t.order, { ascending: !!t.asc });
   const rows = data ?? [];
   const { data: { session } } = await sb.auth.getSession();
+  if (!isCurrentView(generation)) return;
   let scheduleBlock = "";
   if (table === "themes" && ROLE === "admin") {
     const { data: st, error: settingsError } = await sb.from("settings").select("*").eq("id", 1).single();
+    if (!isCurrentView(generation)) return;
     if (settingsError) scheduleBlock = `<p class="auth-error">Could not load schedule settings: ${esc(settingsError.message)}</p>`;
     else if (st) scheduleBlock = `<form id="theme-schedule" class="admin-schedule"><h3>Photo Theme Schedule Settings</h3>
       <label>Days each theme runs <small>Used to suggest dates for new themes. You can still edit each theme's dates individually.</small><input name="theme_length_days" type="number" min="1" value="${st.theme_length_days}"></label>
@@ -200,14 +251,15 @@ async function listUI(table, host) {
       const { error: fileError } = await sb.storage.from("media").remove([deletedRow.pdf_path]);
       if (fileError) return alert(`Announcement deleted, but its flyer could not be removed: ${fileError.message}`);
     }
-    show();
+    if (cur === parentTab) show();
   });
 }
 
 async function form(row, target = document.getElementById("form")) {
-  const t = T[LT]; let d = row || {};
+  const formTable = LT, formTab = formTable === "faq" ? "home" : formTable;
+  const t = T[formTable]; let d = row || {};
   let suggestionError = "";
-  if (!row && LT === "themes") {
+  if (!row && formTable === "themes") {
     const { data, error } = await sb.rpc("next_theme_window");
     if (error) suggestionError = "Could not suggest dates: " + error.message;
     else if (data?.[0]) d = { starts_at: data[0].starts_at, ends_at: data[0].ends_at };
@@ -231,7 +283,7 @@ async function form(row, target = document.getElementById("form")) {
       if (type === "file") {
         const f = inp.files[0]; if (!f) continue;
         let path = crypto.randomUUID() + "." + (f.name.split(".").pop() || "bin").toLowerCase();
-        if (LT === "announcements" && ROLE === "leader") {
+        if (formTable === "announcements" && ROLE === "leader") {
           const { data: { session }, error: sessionError } = await sb.auth.getSession();
           if (sessionError || !session) return (msg.textContent = `Could not verify the signed-in member: ${sessionError?.message || "no active session"}`);
           path = `${session.user.id}/${path}`;
@@ -256,7 +308,7 @@ async function form(row, target = document.getElementById("form")) {
       else if (type === "number") out[k] = Number(inp.value) || 0;
       else out[k] = inp.value.trim() || null;
     }
-    if (LT === "videos") {
+    if (formTable === "videos") {
       const youtubeInput = e.target.elements.youtube_id.value.trim();
       const driveInput = e.target.elements.google_drive_id.value.trim();
       if (youtubeInput && driveInput) { msg.textContent = "Use either a YouTube link or a Google Drive link, not both."; return; }
@@ -271,7 +323,7 @@ async function form(row, target = document.getElementById("form")) {
         if (row?.video_path) replaced.push(row.video_path);
       }
     }
-    const q = row ? sb.from(LT).update(out).eq("id", row.id) : sb.from(LT).insert(out);
+    const q = row ? sb.from(formTable).update(out).eq("id", row.id) : sb.from(formTable).insert(out);
     const { error } = await q;
     if (error) {
       const cleanup = uploaded.length ? await sb.storage.from("media").remove(uploaded) : { error: null };
@@ -285,7 +337,7 @@ async function form(row, target = document.getElementById("form")) {
         return;
       }
     }
-    show();
+    if (cur === formTab) show();
   };
 }
 
@@ -300,8 +352,9 @@ const DEFAULT_PORTAL_TILES = [
   { title: "Feedback", description: "Give feedback on anything LU.", url: "https://docs.google.com/forms/d/e/1FAIpQLSfwVwucRiMsnTMPcP-LV25BrLkVb_dBFtxDyX0xMIMqguZisQ/viewform", cta: "Open Form", icon: "document" }
 ];
 const DEFAULT_PORTAL_BANNER = { enabled: false, text: "", link_text: "Learn more", link_url: "" };
-async function portalLayoutUI(host = app) {
+async function portalLayoutUI(host = app, generation = activeViewGeneration) {
   const { data: st, error } = await sb.from("settings").select("portal_banner,portal_tiles").eq("id", 1).single();
+  if (!isCurrentView(generation)) return;
   if (error) {
     host.innerHTML = (host === app ? tabs() : "") + `<p class="auth-error">Could not load portal settings: ${esc(error.message)}</p>`;
     return;
@@ -372,8 +425,9 @@ const DEFAULT_HOME_SECTIONS = [
   {id:"faq", label:"Frequently asked questions", enabled:true},
   {id:"photo-challenge", label:"Photo Challenge shortcut", enabled:true}
 ];
-async function homeLayoutUI(host = app) {
+async function homeLayoutUI(host = app, generation = activeViewGeneration) {
   const {data: st, error} = await sb.from("settings").select("portal_home_sections").eq("id",1).single();
+  if (!isCurrentView(generation)) return;
   if (error) {
     host.innerHTML = (host === app ? tabs() : "") + `<p class="auth-error">Could not load home page settings: ${esc(error.message)}</p>`;
     return;
@@ -404,8 +458,9 @@ async function homeLayoutUI(host = app) {
   };
 }
 
-async function settings() {
+async function settings(generation = activeViewGeneration) {
   const { data: s, error } = await sb.from("settings").select("*").eq("id", 1).single();
+  if (!isCurrentView(generation)) return;
   if (error || !s) {
     app.innerHTML = tabs() + `<p class="auth-error">Could not load schedule settings: ${esc(error?.message || "No settings were returned.")}</p>`;
     return;
@@ -526,15 +581,16 @@ async function photosSection() {
   if (ROLE !== "admin") box.querySelectorAll("[data-edit],[data-x],#ph-man").forEach(e => e.remove());
 }
 
-async function peopleUI(table, heading, blurb, addLabel, btnText) {
+async function peopleUI(table, heading, blurb, addLabel, btnText, generation = activeViewGeneration) {
   const { data, error } = await sb.from(table).select("email").order("email");
   const rows = data ?? [];
   const me = (await sb.auth.getSession()).data.session.user.email.toLowerCase();
+  if (!isCurrentView(generation)) return;
   app.innerHTML = tabs() + `<h3>${heading}</h3><p><small>${blurb}</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run the latest SQL update first.</p>` : ""}` +
     rows.map(a => `<div class="row"><span>${esc(a.email)}</span>${table === "leadership" ? "<small>Manage chart participation below; membership is retained.</small>" : table === "admins" && a.email === me ? "<small>(you)</small>" : `<button class="auth-btn alt" data-rm="${esc(a.email)}">Remove</button>`}</div>`).join("") +
     `<form id="aa"><label>${addLabel}<input type="email" name="e" placeholder="name@latterup.org" required></label><div><button class="auth-btn" type="submit">${btnText}</button></div><small id="msg"></small></form>`;
   wire();
-  app.querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => { if (confirm("Remove " + b.dataset.rm + " from " + heading.toLowerCase() + "?")) { const { data, error } = await sb.from(table).delete().eq("email", b.dataset.rm).select("email").maybeSingle(); if (error || !data) return alert("Could not remove " + b.dataset.rm + ": " + (error?.message || "no record was deleted")); peopleUI(table, heading, blurb, addLabel, btnText); } });
+  app.querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => { if (confirm("Remove " + b.dataset.rm + " from " + heading.toLowerCase() + "?")) { const { data, error } = await sb.from(table).delete().eq("email", b.dataset.rm).select("email").maybeSingle(); if (error || !data) return alert("Could not remove " + b.dataset.rm + ": " + (error?.message || "no record was deleted")); if (cur === "_a") await show(); } });
   document.getElementById("aa").onsubmit = async e => {
     e.preventDefault(); const msg = document.getElementById("msg");
     if (error) { msg.textContent = "Could not load this list; fix the listed database error before adding entries."; return; }
@@ -551,7 +607,7 @@ async function peopleUI(table, heading, blurb, addLabel, btnText) {
         return;
       }
       msg.textContent=`Added ${em}.`;
-      await peopleUI(table, heading, blurb, addLabel, btnText);
+      if (cur === "_a") await show();
     } catch (insertError) {
       console.error(`Could not add ${em} to ${table}:`,insertError);
       msg.textContent=`Could not add ${em}: ${insertError.message || "Unexpected error."}`;
@@ -560,7 +616,7 @@ async function peopleUI(table, heading, blurb, addLabel, btnText) {
     }
   };
 }
-async function studentLeadershipUI() {
+async function studentLeadershipUI(generation = activeViewGeneration) {
   const [settingsResult, membersResult, rolesResult, assignmentResult, reportsResult, prizesResult, claimsResult] = await Promise.all([
     sb.from("leadership_hub_settings").select("*").eq("id", 1).single(),
     sb.from("leadership_chart_members").select("*").order("sort_order").order("display_name"),
@@ -570,6 +626,7 @@ async function studentLeadershipUI() {
     sb.from("leadership_prizes").select("*").order("created_at"),
     sb.from("leadership_prize_claims").select("*").eq("status", "pending").order("created_at"),
   ]);
+  if (!isCurrentView(generation)) return;
   const failure = [settingsResult, membersResult, rolesResult, assignmentResult, reportsResult, prizesResult, claimsResult].find(result => result.error);
   if (failure) {
     app.innerHTML = tabs() + `<p class="auth-error">Student Leadership settings could not load: ${esc(failure.error.message)}. Run update-10-student-leadership-hub.sql and update-19-leadership-rotation-pause.sql in Supabase SQL Editor.</p>`;
@@ -586,6 +643,7 @@ async function studentLeadershipUI() {
     sb.from("leadership_rotation_skip_requests").select("id,week_start,member_email,reason,created_at").eq("status", "pending").order("week_start").order("created_at"),
     sb.from("leadership_role_overrides").select("role_id,member_email").eq("week_start", weekStart),
   ]);
+  if (!isCurrentView(generation)) return;
   const rotationFailure = [exclusionsResult, skipRequestsResult, overridesResult].find(result => result.error);
   if (rotationFailure) {
     app.innerHTML = tabs() + `<p class="auth-error">Weekly rotation settings could not load: ${esc(rotationFailure.error.message)}. Run update-12-leadership-role-overrides-and-photo-alerts.sql in Supabase SQL Editor.</p>`;
@@ -709,7 +767,7 @@ async function studentLeadershipUI() {
       return;
     }
     leadershipAssignmentsOpen = true;
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   });
   const addMemberEmailForm = document.getElementById("lh-add-member-email");
   if (addMemberEmailForm) addMemberEmailForm.onsubmit = async event => {
@@ -729,7 +787,7 @@ async function studentLeadershipUI() {
       return;
     }
     leadershipAssignmentsOpen = true;
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   };
   document.querySelectorAll("[data-toggle-week-exclusion]").forEach(button => button.onclick = async () => {
     const email = button.dataset.toggleWeekExclusion;
@@ -746,7 +804,7 @@ async function studentLeadershipUI() {
       return;
     }
     leadershipAssignmentsOpen = true;
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   });
   if (ROLE === "admin") await paintRotationSkipQueue(skipRequestsResult.data);
   document.querySelectorAll("[data-save-role]").forEach(button => button.onclick = async () => {
@@ -757,7 +815,7 @@ async function studentLeadershipUI() {
     const { error } = await sb.from("leadership_chart_roles").update({ name }).eq("id", row.dataset.role);
     if (error) { message.textContent = `Could not save role: ${error.message}`; button.disabled = false; return; }
     leadershipAssignmentsOpen = true;
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   });
   document.getElementById("lh-add-role").onsubmit = async event => {
     event.preventDefault();
@@ -769,7 +827,7 @@ async function studentLeadershipUI() {
     const { error } = await sb.rpc("add_leadership_chart_role", { p_name: name });
     if (error) { message.textContent = `Could not add role: ${error.message}`; button.disabled = false; return; }
     leadershipAssignmentsOpen = true;
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   };
   document.getElementById("lh-save-role-order").onclick = async event => {
     const button = event.currentTarget, message = document.getElementById("lh-role-order-message");
@@ -789,7 +847,7 @@ async function studentLeadershipUI() {
     const { error } = await sb.rpc("set_leadership_chart_role_order", { p_role_ids: requestedOrder.map(role => role.id) });
     if (error) { message.textContent = `Could not save role order: ${error.message}`; button.disabled = false; return; }
     leadershipAssignmentsOpen = true;
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   };
 
   const settingsForm = document.getElementById("lh-settings"), settingsMessage = document.getElementById("lh-settings-message");
@@ -852,7 +910,7 @@ async function studentLeadershipUI() {
     const { error } = await sb.rpc("shuffle_leadership_member_order");
     if (error) { alert(`Could not shuffle member rotation order: ${error.message}`); button.disabled = false; return; }
     leadershipAssignmentsOpen = true;
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   };
   document.querySelectorAll("[data-save-member]").forEach(button => button.onclick = async () => {
     const card = button.closest("[data-member]"), email = card.dataset.member, message = card.querySelector("[data-member-message]");
@@ -877,7 +935,7 @@ async function studentLeadershipUI() {
       points_cost: Number(form.points_cost.value),
     });
     if (error) { message.textContent = `Could not add prize: ${error.message}`; return; }
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   };
   const prizeHost = document.getElementById("lh-prize-list");
   prizeHost.innerHTML = prizesResult.data.map(prize => `<div class="leadership-list-row"><span>${esc(prize.name)} · ${prize.points_cost} points${prize.active ? "" : " · unavailable"}</span><button class="auth-btn alt" type="button" data-toggle-prize="${prize.id}">${prize.active ? "Hide prize" : "Restore prize"}</button></div>`).join("")
@@ -886,7 +944,7 @@ async function studentLeadershipUI() {
     const prize = prizesResult.data.find(item => item.id === button.dataset.togglePrize);
     const { error } = await sb.from("leadership_prizes").update({ active: !prize.active }).eq("id", prize.id);
     if (error) { alert(`Could not update prize: ${error.message}`); return; }
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   });
   await paintChatReportQueue(reportsResult.data);
   await paintPrizeClaimQueue(claimsResult.data);
@@ -907,7 +965,7 @@ async function paintChatReportQueue(reports) {
     button.disabled = true;
     const { error } = await sb.rpc("review_leadership_chat_report", { p_report_id: button.dataset.reviewReport, p_decision: button.dataset.decision });
     if (error) { alert(`Could not review report: ${error.message}`); button.disabled = false; return; }
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   });
 }
 
@@ -929,7 +987,7 @@ async function paintRotationSkipQueue(requests) {
     });
     if (error) { alert(`Could not review rotation request: ${error.message}`); button.disabled = false; return; }
     leadershipAssignmentsOpen = true;
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   });
 }
 
@@ -943,17 +1001,18 @@ async function paintPrizeClaimQueue(claims) {
     button.disabled = true;
     const { error } = await sb.rpc("review_leadership_prize_claim", { p_claim_id: button.dataset.reviewClaim, p_decision: button.dataset.decision });
     if (error) { alert(`Could not review prize request: ${error.message}`); button.disabled = false; return; }
-    await studentLeadershipUI();
+    if (cur === "_h") await show();
   });
 }
 
-async function alertsUI() {
+async function alertsUI(generation = activeViewGeneration) {
   const [{ data: c, error }, roleEmailResult, rolesResult, roleTemplatesResult] = await Promise.all([
     sb.from("notify_config").select("*").eq("id", 1).maybeSingle(),
     sb.from("leadership_role_email_settings").select("*").eq("id", 1).maybeSingle(),
     sb.from("leadership_chart_roles").select("id,name").order("sort_order").order("name"),
     sb.from("leadership_role_email_templates").select("*").order("created_at"),
   ]);
+  if (!isCurrentView(generation)) return;
   const roleEmailSettings = roleEmailResult.data;
   const roleEmailError = roleEmailResult.error || rolesResult.error || roleTemplatesResult.error;
   const roleEmailSetupHint = roleTemplatesResult.error
@@ -1213,19 +1272,26 @@ async function alertsUI() {
   };
   document.getElementById("al-check").onclick = checkStatus;
 }
-async function homeTabUI() {
-  app.innerHTML = tabs() + '<div id="hp-portal"></div><div id="hp-home"></div><section class="portal-admin-section"><h3>Frequently asked questions</h3><div id="hp-faq"></div></section>';
+async function homeTabUI(generation = activeViewGeneration) {
+  if (!isCurrentView(generation)) return;
+  app.innerHTML = tabs() + '<div id="hp-portal"><p class="admin-tab-loading">Loading portal settings…</p></div><div id="hp-home"><p class="admin-tab-loading">Loading home page layout…</p></div><section class="portal-admin-section"><h3>Frequently asked questions</h3><div id="hp-faq"><p class="admin-tab-loading">Loading FAQs…</p></div></section>';
   wire();
-  await portalLayoutUI(document.getElementById("hp-portal"));
-  await homeLayoutUI(document.getElementById("hp-home"));
-  await listUI("faq", document.getElementById("hp-faq"));
+  const portalHost = document.getElementById("hp-portal");
+  const homeHost = document.getElementById("hp-home");
+  const faqHost = document.getElementById("hp-faq");
+  await Promise.all([
+    portalLayoutUI(portalHost, generation),
+    homeLayoutUI(homeHost, generation),
+    listUI("faq", faqHost, generation),
+  ]);
 }
 
-async function studentsUI(notice = "") {
+async function studentsUI(notice = "", generation = activeViewGeneration) {
   const [{ data, error }, { data: leaderRows, error: leaderError }] = await Promise.all([
     sb.rpc("list_students"),
     sb.from("leadership").select("email").order("email"),
   ]);
+  if (!isCurrentView(generation)) return;
   const students = data ?? [];
   if (!leaderError) {
     const knownEmails = new Set(students.map(student => student.email?.toLowerCase()));
@@ -1277,7 +1343,7 @@ async function studentsUI(notice = "") {
         alert(`Could not ${isAdding ? "add" : "remove"} ${email} ${isAdding ? "to" : "from"} Student Leadership: ${result.error.message}`);
         return;
       }
-      await studentsUI(`${email} ${isAdding ? "added to" : "removed from"} Student Leadership.`);
+      if (cur === "_s") await studentsUI(`${email} ${isAdding ? "added to" : "removed from"} Student Leadership.`);
     });
     list.querySelectorAll("[data-remove-student]").forEach(button => button.onclick = async () => {
       const email = button.dataset.removeStudent;
@@ -1285,7 +1351,7 @@ async function studentsUI(notice = "") {
       button.disabled = true;
       const { data: deleted, error: deleteError } = await sb.rpc("remove_student_account", { p_email: email });
       if (deleteError) { alert(`Could not remove ${email}: ${deleteError.message}`); button.disabled = false; return; }
-      await studentsUI(`Removed ${deleted?.[0]?.email || email}.`);
+      if (cur === "_s") await studentsUI(`Removed ${deleted?.[0]?.email || email}.`);
     });
     removableCount = students.filter(student => !student.admin_role && !student.leader_role).length;
     const removeAllButton = document.getElementById("st-remove-all");
@@ -1309,7 +1375,7 @@ async function studentsUI(notice = "") {
       button.disabled = false;
       return;
     }
-    await studentsUI(`${email} now has Student Leadership access. They can sign in with Google when ready.`);
+    if (cur === "_s") await studentsUI(`${email} now has Student Leadership access. They can sign in with Google when ready.`);
   };
   document.getElementById("st-q").oninput = paint;
   paint();
@@ -1320,7 +1386,7 @@ async function studentsUI(notice = "") {
     button.disabled = true;
     const { data: deleted, error: deleteError } = await sb.rpc("remove_all_student_accounts");
     if (deleteError) { alert(`Could not remove student accounts: ${deleteError.message}`); button.disabled = false; return; }
-    await studentsUI(`Removed ${deleted?.length || 0} student account${deleted?.length === 1 ? "" : "s"}.`);
+    if (cur === "_s") await studentsUI(`Removed ${deleted?.length || 0} student account${deleted?.length === 1 ? "" : "s"}.`);
   };
 }
 boot();
