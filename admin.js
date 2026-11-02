@@ -237,6 +237,7 @@ async function listUI(table, host, generation = activeViewGeneration) {
           <section class="photo-manual-panel"><div id="photo-manual-upload"></div></section>
         </div>`
       : listContent + scheduleBlock);
+  if (table === "themes") host.querySelector("nav")?.classList.add("photo-admin-nav");
   if (host === app) wire();
   const scheduleForm = document.getElementById("theme-schedule");
   const pl = document.getElementById("pub-link"); if (pl) pl.textContent = new URL("share-photos.html", location.href).href;

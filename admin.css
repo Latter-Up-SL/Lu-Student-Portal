@@ -261,3 +261,53 @@
   .alert-card-title { flex: 1 1 calc(100% - 66px); }
   .alert-card-head .switch { flex: 1 1 100%; margin-left: 0; padding-top: 4px; }
 }
+
+/* Photo Challenge tab layout */
+.adm nav.photo-admin-nav { margin-bottom: 12px; }
+.adm .photo-admin-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "approval" "themes" "manual";
+  align-items: start;
+  gap: 18px;
+  margin-top: 0;
+}
+.adm .photo-approval-panel { grid-area: approval; min-width: 0; }
+.adm .photo-theme-column { grid-area: themes; min-width: 0; }
+.adm .photo-manual-panel { grid-area: manual; min-width: 0; }
+.adm .photo-approval-panel,
+.adm .photo-manual-panel {
+  min-width: 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  border: var(--adm-border);
+  border-radius: var(--adm-radius);
+  background: var(--surface);
+  box-shadow: var(--adm-shadow);
+}
+.adm #photos-section { margin: 0; padding: 0; border: 0; }
+.adm #photos-section h3,
+.adm .photo-manual-panel h3 { margin: 0 0 .75rem; }
+.adm .photo-approval-content { display: grid; gap: 14px; min-width: 0; }
+.adm .photo-approval-content > label { max-width: 100%; }
+.adm .photo-approval-content .thumbs { grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); gap: 10px; }
+.adm .photo-approval-content .thumbs figure {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: var(--adm-border);
+  border-radius: 12px;
+  background: var(--cream);
+}
+.adm .photo-approval-content .thumbs figcaption { overflow-wrap: anywhere; }
+.adm .photo-approval-content .thumbs figcaption > span { display: flex; flex-wrap: wrap; gap: 5px; }
+.adm .photo-approval-content .thumbs .auth-btn { padding: .45rem .65rem; }
+.adm .photo-manual-panel form { margin: 0; }
+.adm .photo-theme-list #new { margin-top: 0; }
+.adm .photo-theme-column > .admin-schedule { margin-top: 18px; }
+@media (min-width: 900px) {
+  .adm .photo-admin-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "themes approval" "manual manual";
+    gap: 20px;
+  }
+}
