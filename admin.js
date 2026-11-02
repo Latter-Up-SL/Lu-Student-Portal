@@ -110,7 +110,7 @@ function tabs() {
   const ordered = [...preferredOrder.filter(id => entryMap.has(id)), ...entries.map(entry => entry.id).filter(id => !preferredOrder.includes(id))]
     .map(id => entryMap.get(id));
   const btn = ({ id, label }) => `<button class="auth-btn alt ${cur === id ? "on" : ""}" data-t="${id}" ${ROLE === "admin" ? 'draggable="true" title="Drag to reorder tabs"' : ""}>${label}</button>`;
-  return "<nav aria-label=\"Admin tools\">" + ordered.map(btn).join("") + "</nav>" +
+  return `<nav class="${cur === "themes" ? "photo-admin-nav" : ""}" aria-label="Admin tools">` + ordered.map(btn).join("") + "</nav>" +
     (ADMIN_TAB_ORDER_ERROR ? `<small class="auth-error">${esc(ADMIN_TAB_ORDER_ERROR)}</small>` : "") +
     (ROLE === "leader" ? '<p class="role-note"><small>Student Leadership access: you can add announcements, videos and photo themes, and approve or reject photos.</small></p>' : "");
 }
@@ -237,7 +237,6 @@ async function listUI(table, host, generation = activeViewGeneration) {
           <section class="photo-manual-panel"><div id="photo-manual-upload"></div></section>
         </div>`
       : listContent + scheduleBlock);
-  if (table === "themes") host.querySelector("nav")?.classList.add("photo-admin-nav");
   if (host === app) wire();
   const scheduleForm = document.getElementById("theme-schedule");
   const pl = document.getElementById("pub-link"); if (pl) pl.textContent = new URL("share-photos.html", location.href).href;

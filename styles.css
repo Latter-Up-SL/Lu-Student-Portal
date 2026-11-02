@@ -1060,7 +1060,6 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 }
 
 /* merged Photo Challenge admin tab + gallery of all photos in a theme */
-#photos-section { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--stone-line); }
 .thumb-btn { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 9px; }
 .thumb-btn:focus-visible { outline: 3px solid var(--gold-deep); outline-offset: 2px; }
 .all-title { margin: 1.75rem 0 .25rem; font-family: var(--font-body); color: var(--navy); }
