@@ -134,8 +134,8 @@
       return;
     }
 
-    const settingsResult = await sb.from("leadership_hub_settings").select("rotation_weekday,approval_points,visibility,rotation_paused,rotation_pause_reason,next_meeting_date").eq("id", 1).single();
-    if (settingsResult.error) return showError(app, `The Student Leadership hub could not load: ${settingsResult.error.message}. Ask an admin to run update-10-student-leadership-hub.sql and update-19-leadership-rotation-pause.sql.`);
+    const settingsResult = await sb.from("leadership_hub_settings").select("rotation_weekday,approval_points,visibility,rotation_paused,rotation_pause_reason,next_meeting_date,show_chat_reports,show_prizes").eq("id", 1).single();
+    if (settingsResult.error) return showError(app, `The Student Leadership hub could not load: ${settingsResult.error.message}. Ask an admin to run update-10-student-leadership-hub.sql, update-19-leadership-rotation-pause.sql, and update-23-leadership-visibility-and-prize-fulfillment.sql.`);
     const mayViewHub = settingsResult.data.visibility === "leaders_admins"
       || (settingsResult.data.visibility === "admins" && role === "admin");
     if (!mayViewHub) {
@@ -176,8 +176,7 @@
     const members = membersResult.data.map(member => ({ ...member, roles: assignments.get(member.email) || [] }));
     const roleOverrides = new Map(overridesResult.data.map(item => [item.role_id, item.member_email.toLowerCase()]));
 
-    app.innerHTML = `<div id="weekly-role-chart"></div>
-      <section class="leadership-section leadership-report-section" id="report-section">
+    const reportChatSection = settings.show_chat_reports ? `<section class="leadership-section leadership-report-section" id="report-section">
         <div class="leadership-section-heading"><div><p class="eyebrow">Share a moment of connection</p><h2>Report My Chats</h2></div>
           <span class="leadership-section-icon">${LUIcon("camera", 23)}</span></div>
         <p>These reports help Student Leadership members connect with the student body and help everyone feel included. Share a conversation that helped someone feel welcomed or involved. An admin reviews each screenshot; approved reports earn ${settingsResult.data.approval_points} points.</p>
@@ -185,13 +184,14 @@
           <label>Who did you chat with?<input name="chatted_with" maxlength="120" placeholder="Enter their name" required></label>
           <label class="leadership-file-field">Add a screenshot<input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp" required><small>PNG, JPG, or WebP · Up to 10 MB. Only you and admins can view your screenshot.</small></label>
           <div class="leadership-form-footer"><button class="auth-btn" type="submit">Submit chat report</button><p id="chat-report-message" role="status"></p></div>
-        </form></section>
-      <section class="leadership-section leadership-rewards-section" id="points-section">
+        </form></section>` : "";
+    const prizesSection = settings.show_prizes ? `<section class="leadership-section leadership-rewards-section" id="points-section">
         <div class="leadership-section-heading"><div><p class="eyebrow">A little thank-you</p><h2>Points and prizes</h2></div>
           <span class="leadership-section-icon leadership-rewards-icon">★</span></div>
         <div id="points-summary">Loading your points…</div>
         <div id="leadership-prizes" class="leadership-prize-grid"></div>
-        <div class="leadership-claims"><h3>My prize requests</h3><div id="my-prize-claims"></div></div></section>`;
+        <div class="leadership-claims"><h3>My prize requests</h3><div id="my-prize-claims"></div></div></section>` : "";
+    app.innerHTML = `<div id="weekly-role-chart"></div>${reportChatSection}${prizesSection}`;
     const excludedEmails = new Set(exclusionsResult.data.map(item => item.member_email.toLowerCase()));
     const chartHost = document.getElementById("weekly-role-chart");
     if (rotationPausedNow) {
@@ -219,8 +219,8 @@
       }
       await load();
     });
-    await wireReports(session.user);
-    await loadRewards(session.user.id, userEmail);
+    if (settings.show_chat_reports) await wireReports(session.user);
+    if (settings.show_prizes) await loadRewards(session.user.id, userEmail);
   }
 
   async function wireReports(user) {
@@ -281,7 +281,7 @@
     const chatPoints = reports.data.reduce((total, report) => total + report.points_awarded, 0);
     const bonusPoints = bonusResult.data.reduce((total, entry) => total + entry.points, 0);
     const earned = chatPoints + bonusPoints;
-    const reserved = claims.data.filter(claim => ["pending", "approved"].includes(claim.status)).reduce((total, claim) => total + claim.points_cost, 0);
+    const reserved = claims.data.filter(claim => ["pending", "approved", "fulfilled"].includes(claim.status)).reduce((total, claim) => total + claim.points_cost, 0);
     summary.innerHTML = `<div class="leadership-points-balance"><span>Available to spend<br><small>${chatPoints} chat points + ${bonusPoints} bonus points</small></span><strong>${earned - reserved} points</strong></div>
       ${bonusResult.data.length ? `<details class="leadership-bonus-history"><summary>Bonus points history</summary>${bonusResult.data.map(entry => `<p><strong>${entry.points} points</strong> · ${esc(entry.reason)} <small>${esc(new Date(entry.created_at).toLocaleDateString())}</small></p>`).join("")}</details>` : ""}`;
     prizeHost.innerHTML = prizes.data.map(prize => `<article class="leadership-prize-card">

@@ -504,7 +504,9 @@ async function photosSection() {
     if (manualBox) manualBox.innerHTML = "<h3>Manual photo uploads</h3><p>Add a theme before importing photos.</p>";
     return;
   }
-  sel = th.find(t => t.id === sel)?.id || th[0].id;
+  const now = new Date();
+  const activeTheme = th.find(theme => new Date(theme.starts_at) <= now && now < new Date(theme.ends_at));
+  sel = th.find(theme => theme.id === sel)?.id || activeTheme?.id || th[0].id;
   const { data: submissions, error: subsError } = await sb.from("submissions").select("*").eq("theme_id", sel).order("created_at");
   const subs = submissions ?? [];
   if (subsError) { box.innerHTML = `<h3>Photo approval</h3><p class="auth-error">Could not load submissions: ${esc(subsError.message)}</p>`; return; }
@@ -643,12 +645,12 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
     sb.from("leadership_member_roles").select("*"),
     sb.from("leadership_chat_reports").select("*").eq("status", "pending").order("created_at"),
     sb.from("leadership_prizes").select("*").order("created_at"),
-    sb.from("leadership_prize_claims").select("*").eq("status", "pending").order("created_at"),
+    sb.from("leadership_prize_claims").select("*").in("status", ["pending", "approved"]).order("created_at"),
   ]);
   if (!isCurrentView(generation)) return;
   const failure = [settingsResult, membersResult, rolesResult, assignmentResult, reportsResult, prizesResult, claimsResult].find(result => result.error);
   if (failure) {
-    app.innerHTML = tabs() + `<p class="auth-error">Student Leadership settings could not load: ${esc(failure.error.message)}. Run update-10-student-leadership-hub.sql and update-19-leadership-rotation-pause.sql in Supabase SQL Editor.</p>`;
+    app.innerHTML = tabs() + `<p class="auth-error">Student Leadership settings could not load: ${esc(failure.error.message)}. Run update-10-student-leadership-hub.sql, update-19-leadership-rotation-pause.sql, and update-23-leadership-visibility-and-prize-fulfillment.sql in Supabase SQL Editor.</p>`;
     wire();
     return;
   }
@@ -686,6 +688,8 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
           <option value="leaders_admins" ${settings.visibility === "leaders_admins" ? "selected" : ""}>Student Leadership and admins</option>
         </select>
       </label>
+      ${ROLE === "admin" ? `<label class="chk"><input name="show_chat_reports" type="checkbox" ${settings.show_chat_reports !== false ? "checked" : ""}> Show Report My Chats to Student Leadership members</label>
+      <label class="chk"><input name="show_prizes" type="checkbox" ${settings.show_prizes !== false ? "checked" : ""}> Show Points and prizes to Student Leadership members</label>` : ""}
       <label>Change role assignments on (UTC)
         <select name="rotation_weekday">${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${settings.rotation_weekday === index ? "selected" : ""}>${day}</option>`).join("")}</select>
       </label>
@@ -753,6 +757,11 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
       <div id="lh-prize-list"></div>
     </section>
     <section class="leadership-admin-section"><h3>Prize requests awaiting approval</h3><div id="lh-claim-queue"></div></section>
+    ${ROLE === "admin" ? `<details class="leadership-admin-section leadership-admin-collapsible">
+      <summary>Approved prizes to fulfill</summary>
+      <p>These are approved prize requests that have not yet been marked as fulfilled. Marking one fulfilled removes it from this list.</p>
+      <div id="lh-approved-prizes"></div>
+    </details>` : ""}
     <form id="lh-points-settings" class="leadership-admin-section">
       <h3>Chat report points</h3>
       <label>Points for each approved chat report<input name="approval_points" type="number" min="0" max="10000" value="${settings.approval_points}" required></label>
@@ -888,9 +897,13 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
       rotation_paused: paused,
       rotation_pause_reason: reason || null,
       next_meeting_date: nextMeetingDate || null,
+      ...(ROLE === "admin" ? {
+        show_chat_reports: form.show_chat_reports.checked,
+        show_prizes: form.show_prizes.checked,
+      } : {}),
     }).eq("id", 1);
     settingsMessage.textContent = error
-      ? `Could not save settings: ${error.message}${/rotation_paused|rotation_pause_reason|next_meeting_date/i.test(error.message) ? " Run update-19-leadership-rotation-pause.sql in Supabase SQL Editor." : ""}`
+      ? `Could not save settings: ${error.message}${/show_chat_reports|show_prizes/i.test(error.message) ? " Run update-23-leadership-visibility-and-prize-fulfillment.sql in Supabase SQL Editor." : /rotation_paused|rotation_pause_reason|next_meeting_date/i.test(error.message) ? " Run update-19-leadership-rotation-pause.sql in Supabase SQL Editor." : ""}`
       : "Settings saved.";
   };
   document.getElementById("lh-points-settings").onsubmit = async event => {
@@ -1012,14 +1025,26 @@ async function paintRotationSkipQueue(requests) {
 
 async function paintPrizeClaimQueue(claims) {
   const host = document.getElementById("lh-claim-queue");
-  if (!claims.length) { host.textContent = "No prize requests are waiting for approval."; return; }
-  host.innerHTML = claims.map(claim => `<div class="leadership-list-row"><span>${esc(claim.user_email)} requested ${esc(claim.prize_name)} · ${claim.points_cost} points</span>
+  const pending = claims.filter(claim => claim.status === "pending");
+  const approvedHost = document.getElementById("lh-approved-prizes");
+  const approved = claims.filter(claim => claim.status === "approved");
+  host.innerHTML = pending.length ? pending.map(claim => `<div class="leadership-list-row"><span>${esc(claim.user_email)} requested ${esc(claim.prize_name)} · ${claim.points_cost} points</span>
     <span><button class="auth-btn" type="button" data-review-claim="${claim.id}" data-decision="approved">Approve</button>
-    <button class="auth-btn alt" type="button" data-review-claim="${claim.id}" data-decision="rejected">Reject</button></span></div>`).join("");
+    <button class="auth-btn alt" type="button" data-review-claim="${claim.id}" data-decision="rejected">Reject</button></span></div>`).join("")
+    : "No prize requests are waiting for approval.";
+  if (approvedHost) approvedHost.innerHTML = approved.length ? approved.map(claim => `<div class="leadership-list-row"><span>${esc(claim.user_email)} · ${esc(claim.prize_name)} · ${claim.points_cost} points</span>
+    <button class="auth-btn" type="button" data-fulfill-claim="${claim.id}">Mark fulfilled</button></div>`).join("")
+    : "No approved prizes are waiting to be fulfilled.";
   host.querySelectorAll("[data-review-claim]").forEach(button => button.onclick = async () => {
     button.disabled = true;
     const { error } = await sb.rpc("review_leadership_prize_claim", { p_claim_id: button.dataset.reviewClaim, p_decision: button.dataset.decision });
     if (error) { alert(`Could not review prize request: ${error.message}`); button.disabled = false; return; }
+    if (cur === "_h") await show();
+  });
+  approvedHost?.querySelectorAll("[data-fulfill-claim]").forEach(button => button.onclick = async () => {
+    button.disabled = true;
+    const { error } = await sb.rpc("fulfill_leadership_prize_claim", { p_claim_id: button.dataset.fulfillClaim });
+    if (error) { alert(`Could not mark prize fulfilled: ${error.message}. Make sure update-23-leadership-visibility-and-prize-fulfillment.sql has been applied.`); button.disabled = false; return; }
     if (cur === "_h") await show();
   });
 }
