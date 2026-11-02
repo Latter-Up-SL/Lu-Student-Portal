@@ -224,11 +224,19 @@ async function listUI(table, host, generation = activeViewGeneration) {
       <small>Share this link: <b id="pub-link"></b><br>Anyone with the link can submit photos (you approve each one first) and see approved photos from finished themes. That means photos of students can be seen by anyone who has the link, so only switch this on if families are comfortable with that. Switch it off any time.</small>
       <div><button class="auth-btn" type="submit">Save schedule settings</button></div><small id="schedule-msg"></small></form>`;
   }
-  host.innerHTML = (host === app ? tabs() : "") + (listError ? `<p class="auth-error">Could not load ${esc(t.label.toLowerCase())}: ${esc(listError.message)}</p>` : "") + `<button class="auth-btn" id="new">+ Add new</button><div id="list">` +
+  const listContent = `<button class="auth-btn" id="new">+ Add new</button><div id="list">` +
     rows.map(r => {
       const canManage = ROLE === "admin" || (table === "announcements" && ROLE === "leader" && r.created_by === session?.user?.id);
       return `<div class="admin-edit-item"><div class="row"><span>${esc(r[t.title])} <small>${esc(r.date || (r.starts_at ? new Date(r.starts_at).toLocaleString() : ""))}</small>${r.publish_at && new Date(r.publish_at) > new Date() ? ` <span class="sched-badge">Scheduled for ${esc(new Date(r.publish_at).toLocaleString())}</span>` : ""}</span><span>${table === "themes" ? `<button class="auth-btn alt" data-ph="${r.id}">Photos</button> ` : ""}${canManage ? `<button class="auth-btn alt" data-e="${r.id}">Edit</button> <button class="auth-btn alt" data-d="${r.id}">Delete</button>` : ""}</span></div><div id="item-form-${r.id}" class="admin-inline-edit"></div></div>`;
-    }).join("") + "</div><div id=\"form\"></div>" + (table === "themes" ? '<div id="photos-section"></div>' : "") + scheduleBlock;
+    }).join("") + "</div><div id=\"form\"></div>";
+  host.innerHTML = (host === app ? tabs() : "") + (listError ? `<p class="auth-error">Could not load ${esc(t.label.toLowerCase())}: ${esc(listError.message)}</p>` : "") +
+    (table === "themes"
+      ? `<div class="photo-admin-layout">
+          <section class="photo-approval-panel" aria-label="Photo approval"><div id="photos-section"></div></section>
+          <section class="photo-theme-column"><div class="photo-theme-list">${listContent}</div>${scheduleBlock}</section>
+          <section class="photo-manual-panel"><div id="photo-manual-upload"></div></section>
+        </div>`
+      : listContent + scheduleBlock);
   if (host === app) wire();
   const scheduleForm = document.getElementById("theme-schedule");
   const pl = document.getElementById("pub-link"); if (pl) pl.textContent = new URL("share-photos.html", location.href).href;
@@ -483,14 +491,23 @@ let sel = null;
 const shrink = f => new Promise((ok, no) => { const i = new Image(); i.onload = () => { const s = Math.min(1, 1600 / Math.max(i.width, i.height)), c = document.createElement("canvas"); c.width = i.width * s; c.height = i.height * s; c.getContext("2d").drawImage(i, 0, 0, c.width, c.height); c.toBlob(ok, "image/jpeg", .85); }; i.onerror = no; i.src = URL.createObjectURL(f); });
 async function photosSection() {
   const box = document.getElementById("photos-section"); if (!box) return;
+  const manualBox = document.getElementById("photo-manual-upload");
   const { data: themes, error: themesError } = await sb.from("themes").select("*").order("starts_at", { ascending: false });
   const th = themes ?? [];
-  if (themesError) { box.innerHTML = `<p class="auth-error">Could not load themes: ${esc(themesError.message)}</p>`; return; }
-  if (!th.length) { box.innerHTML = "<h3>Photos</h3><p>Add a theme above first. For past themes, just use past dates.</p>"; return; }
+  if (themesError) {
+    box.innerHTML = `<h3>Photo approval</h3><p class="auth-error">Could not load themes: ${esc(themesError.message)}</p>`;
+    if (manualBox) manualBox.innerHTML = "";
+    return;
+  }
+  if (!th.length) {
+    box.innerHTML = "<h3>Photo approval</h3><p>Add a theme in the left column first. For past themes, use past dates.</p>";
+    if (manualBox) manualBox.innerHTML = "<h3>Manual photo uploads</h3><p>Add a theme before importing photos.</p>";
+    return;
+  }
   sel = th.find(t => t.id === sel)?.id || th[0].id;
   const { data: submissions, error: subsError } = await sb.from("submissions").select("*").eq("theme_id", sel).order("created_at");
   const subs = submissions ?? [];
-  if (subsError) { box.innerHTML = `<p class="auth-error">Could not load submissions: ${esc(subsError.message)}</p>`; return; }
+  if (subsError) { box.innerHTML = `<h3>Photo approval</h3><p class="auth-error">Could not load submissions: ${esc(subsError.message)}</p>`; return; }
   const urls = {};
   if (subs.length) {
     let signed;
@@ -516,14 +533,15 @@ async function photosSection() {
   const img = s => urls[s.image_path]
     ? `<img src="${urls[s.image_path]}" alt="">`
     : '<div class="photo-missing-file" role="img" aria-label="Photo unavailable">Photo unavailable</div>';
-  box.innerHTML = `<h3>Photos</h3>
+  box.innerHTML = `<h3>Photo approval</h3><div class="photo-approval-content">
   <label>Theme <select id="ph-ts">${opts(sel)}</select></label>
   <div class="needs-approval ${pend.length ? "has" : ""}"><div class="na-head"><h4>Needs approval</h4><span class="na-count">${pend.length}</span></div>
     ${pend.length ? `<div class="thumbs">${pend.map(s => `<figure>${img(s)}<figcaption><b>${esc(s.submitted_by)}</b>${via(s)}<span><button class="auth-btn" data-s="approved" data-id="${s.id}">Approve</button> <button class="auth-btn alt" data-s="rejected" data-id="${s.id}">Reject</button></span></figcaption></figure>`).join("")}</div>` : "<p><small>Nothing waiting, all caught up</small></p>"}</div>
   <div class="approved-block"><div class="na-head"><h4>Approved</h4><span class="na-count ok">${appr.length}</span></div>
     <div class="thumbs">${appr.map(s => `<figure data-fig="${s.id}">${img(s)}<figcaption><b>${esc(s.submitted_by)}</b>${via(s)}<span><button class="auth-btn alt" data-edit="${s.id}">Edit</button></span></figcaption></figure>`).join("") || "<p><small>No approved photos yet.</small></p>"}</div></div>
   ${rej.length ? `<details class="rej"><summary>Rejected (${rej.length})</summary><div class="thumbs">${rej.map(s => `<figure>${img(s)}<figcaption><b>${esc(s.submitted_by)}</b><span><button class="auth-btn alt" data-s="approved" data-id="${s.id}">Approve</button> <button class="auth-btn alt" data-x="${s.id}" data-p="${esc(s.image_path)}">Delete</button></span></figcaption></figure>`).join("")}</div></details>` : ""}
-  <form id="ph-man"><h3>Import photos</h3><small>Adds photos straight into the theme you choose, already approved, good for past Google Form entries. They appear in the gallery with that theme's other photos.</small>
+  </div>`;
+  if (manualBox) manualBox.innerHTML = `<h3>Manual photo uploads</h3><form id="ph-man"><small>Adds photos straight into the theme you choose, already approved, good for past Google Form entries. They appear in the gallery with that theme's other photos.</small>
   <label>Theme these photos belong to<select name="th" required>${opts(sel)}</select></label>
   <label>Student name shown<input name="n" required></label>
   <label>Photos<input type="file" name="f" accept="image/*" multiple required></label>
@@ -562,8 +580,9 @@ async function photosSection() {
     };
     fig.querySelector("[data-cancel]").onclick = () => photosSection();
   });
-  box.querySelector("#ph-man").onsubmit = async e => {
-    e.preventDefault(); const f = e.target.elements, msg = box.querySelector("#ph-msg"), target = f.th.value, files = [...f.f.files];
+  const manualForm = manualBox?.querySelector("#ph-man");
+  if (manualForm) manualForm.onsubmit = async e => {
+    e.preventDefault(); const f = e.target.elements, msg = manualBox.querySelector("#ph-msg"), target = f.th.value, files = [...f.f.files];
     for (const [k, file] of files.entries()) {
       msg.textContent = `Uploading ${k + 1} of ${files.length}…`;
       try {
@@ -576,9 +595,9 @@ async function photosSection() {
       } catch (err) { return (msg.textContent = "Failed on " + file.name + ": " + (err.message || err)); }
     }
     sel = target; await photosSection();
-    box.querySelector("#ph-msg").textContent = `Imported ${files.length} photo${files.length === 1 ? "" : "s"}`;
+    manualBox.querySelector("#ph-msg").textContent = `Imported ${files.length} photo${files.length === 1 ? "" : "s"}`;
   };
-  if (ROLE !== "admin") box.querySelectorAll("[data-edit],[data-x],#ph-man").forEach(e => e.remove());
+  if (ROLE !== "admin") manualBox?.querySelector("#ph-man")?.remove();
 }
 
 async function peopleUI(table, heading, blurb, addLabel, btnText, generation = activeViewGeneration) {
@@ -1379,8 +1398,16 @@ async function studentsUI(notice = "", generation = activeViewGeneration) {
   let removableCount = students.filter(student => !student.admin_role && !student.leader_role).length;
   app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has signed in to the portal, plus Student Leadership members added by email before their first sign-in. New accounts are created automatically when they sign in with Google. Removing a student permanently deletes their account; they can create it again by signing in with Google.</small></p>${loadError ? `<p class="auth-error">${esc(loadError.message)}, check update-6-students-list.sql and update-5a-leadership-team.sql.</p>` : ""}
     ${notice ? `<p class="role-note" role="status">${esc(notice)}</p>` : ""}
-    ${ROLE === "admin" ? `<form id="st-add-leader"><h4>Add Student Leadership access before first sign-in</h4><label>Email address<input name="email" type="email" placeholder="name@latterup.org" required></label><button class="auth-btn" type="submit">Add Student Leadership member</button><small id="st-add-leader-message"></small></form>` : ""}
-    ${ROLE === "admin" ? `<form id="st-import-names"><h3>Import student names from Google Sheets</h3><p><small>In Google Sheets, choose File → Download → Comma-separated values (.csv). Keep first name in column A, last name in B, and email in C; a header row is optional. This updates names for matching accounts and saves names for students who sign in later. It does not create accounts or remove students omitted from the sheet.</small></p><label>Student directory CSV<input name="file" type="file" accept=".csv,text/csv" required></label><button class="auth-btn" type="submit">Import names</button><small id="st-import-names-message" role="status"></small></form>` : ""}
+    ${ROLE === "admin" ? `<div class="student-setup-grid">
+      <details class="student-setup-card">
+        <summary>Add Student Leadership access before first sign-in</summary>
+        <form id="st-add-leader"><label>Email address<input name="email" type="email" placeholder="name@latterup.org" required></label><button class="auth-btn" type="submit">Add Student Leadership member</button><small id="st-add-leader-message"></small></form>
+      </details>
+      <details class="student-setup-card">
+        <summary>Import student names from Google Sheets</summary>
+        <form id="st-import-names"><p><small>In Google Sheets, choose File → Download → Comma-separated values (.csv). Keep first name in column A, last name in B, and email in C; a header row is optional. This updates names for matching accounts and saves names for students who sign in later. It does not create accounts or remove students omitted from the sheet.</small></p><label>Student directory CSV<input name="file" type="file" accept=".csv,text/csv" required></label><button class="auth-btn" type="submit">Import names</button><small id="st-import-names-message" role="status"></small></form>
+      </details>
+    </div>` : ""}
     <div class="student-admin-tools"><h3>Student directory</h3><label>Search students<input id="st-q" type="search" placeholder="Type a name or email"></label></div><p><small id="st-count"></small></p><div id="st-list"></div><div class="student-admin-danger-zone"><h4>Bulk actions</h4><p><small>These actions affect student accounts and cannot be undone.</small></p><button class="auth-btn alt" type="button" id="st-remove-all" ${loadError || removableCount === 0 ? "disabled" : ""}>Remove all students (${removableCount})</button></div>`;
   wire();
   const list = document.getElementById("st-list"), count = document.getElementById("st-count");
