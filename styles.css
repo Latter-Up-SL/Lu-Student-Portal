@@ -1125,7 +1125,8 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .admin-section-heading h2 { margin:.25rem 0 0; color:var(--navy); font:750 clamp(1.25rem,2.5vw,1.6rem)/1.2 var(--font-body); }
 .role-email-card>p { margin:.7rem 0; }
 .role-email-card #role-email-form { margin:1rem 0 0; padding:0; border:0; box-shadow:none; background:transparent; }
-#role-email-templates { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,390px),1fr)); gap:14px; margin:.5rem 0; }
+#role-email-templates { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin:.5rem 0; }
+@media(max-width:900px) { #role-email-templates { grid-template-columns:minmax(0,1fr); } }
 #role-email-templates .leadership-role-management { min-width:0; padding:1rem; border:1px solid var(--stone-line); border-radius:14px; background:var(--cream); }
 #role-email-templates .leadership-role-management>summary { padding:.2rem 0 .8rem; margin-bottom:.9rem; border-bottom:1px solid var(--stone-line); color:var(--navy); font-weight:800; font-size:1rem; cursor:pointer; }
 #role-email-templates .leadership-role-management label { margin:.8rem 0; }
@@ -1178,3 +1179,87 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 }
 [data-theme=dark] .role-email-initial { background:color-mix(in srgb,var(--tint) 20%,var(--surface)); }
 [data-theme=dark] #role-email-templates .leadership-role-management:not([open]) { background:var(--surface); }
+
+/* Unified visual system across every Latter UP admin tab */
+.adm > h2, .adm > h3 { color:var(--navy); margin:1.1rem 0 .45rem; }
+.adm > h2 { font-size:clamp(1.45rem,3vw,2rem); }
+.adm > h3 { font-size:clamp(1.2rem,2.4vw,1.55rem); }
+.adm > p:not(.role-note):not(.auth-error) { max-width:850px; line-height:1.65; }
+.adm > nav + h2, .adm > nav + h3 { margin-top:0; }
+.adm > nav + .admin-page-intro { margin-top:0; }
+.adm .auth-btn { min-height:40px; font-weight:750; box-shadow:0 2px 6px rgba(17,26,68,.045); transition:transform .16s ease,box-shadow .16s ease,background .16s ease; }
+.adm .auth-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 5px 13px rgba(17,26,68,.10); }
+.adm .auth-btn:focus-visible, .adm input:focus-visible, .adm textarea:focus-visible, .adm select:focus-visible { outline:3px solid color-mix(in srgb,var(--gold) 75%,transparent); outline-offset:2px; }
+.adm nav { display:flex; align-items:center; gap:7px; }
+.adm nav .auth-btn { flex:0 0 auto; }
+.adm nav .auth-btn.on { box-shadow:0 3px 10px color-mix(in srgb,var(--gold) 30%,transparent); }
+.adm #list { display:grid; gap:9px; margin:1rem 0 1.5rem; }
+.adm #list:empty { display:none; }
+.adm #list .row { margin:0; min-width:0; }
+.adm #list .row > span:first-child { min-width:0; overflow-wrap:anywhere; font-weight:700; }
+.adm #list .row small { display:block; margin-top:4px; line-height:1.45; }
+.adm #list .row > span:last-child { display:flex; flex-wrap:wrap; align-items:center; gap:7px; }
+.adm #new { margin:.15rem 0 1rem; }
+.adm #form form { margin:1rem 0 1.5rem; background:linear-gradient(145deg,var(--surface),color-mix(in srgb,var(--tint) 28%,var(--surface))); }
+.adm form h3 { margin:0 0 .35rem; }
+.adm form label { min-width:0; line-height:1.45; }
+.adm input:not([type=checkbox]):not([type=radio]), .adm textarea, .adm select { min-width:0; max-width:100%; border-radius:10px; background:var(--cream); color:var(--navy); }
+.adm textarea { line-height:1.55; }
+.adm input[type=checkbox], .adm input[type=radio] { accent-color:var(--slate); }
+.adm .portal-admin-section, .adm .leadership-section, .adm .leadership-admin-section, .adm .leadership-member-admin, .adm .leadership-review-card, .adm .leadership-prize-card { border-radius:18px; box-shadow:0 10px 28px rgba(17,26,68,.045); }
+.adm .portal-admin-section { margin:18px 0 24px; padding:clamp(1rem,2.5vw,1.6rem); }
+.adm .portal-admin-section > p { line-height:1.65; }
+.adm .portal-admin-section h3, .adm .leadership-section h3, .adm .leadership-admin-section h3 { color:var(--navy); }
+.adm .portal-admin-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:1rem; }
+.adm .portal-admin-actions small, .adm [id$="-msg"] { line-height:1.55; overflow-wrap:anywhere; }
+.adm .home-section-edit, .adm .portal-tile-edit { border:1px solid var(--stone-line); border-radius:12px; background:var(--surface); padding:12px 14px; transition:border-color .16s ease,background .16s ease,box-shadow .16s ease; }
+.adm .home-section-edit:hover, .adm .portal-tile-edit:hover { border-color:color-mix(in srgb,var(--slate) 50%,var(--stone-line)); box-shadow:0 4px 14px rgba(17,26,68,.05); }
+.adm .home-section-edit.is-dragging, .adm .portal-tile-edit.is-dragging { opacity:.5; }
+.adm .home-section-edit.drop-target, .adm .portal-tile-edit.drop-target { border-color:var(--gold); background:color-mix(in srgb,var(--gold) 12%,var(--surface)); }
+.adm #home-section-editor { display:grid; gap:9px; margin:1rem 0; }
+.adm .home-drag-handle { display:inline-flex; align-items:center; justify-content:center; min-width:58px; padding:5px 8px; border-radius:8px; background:var(--tint); color:var(--navy); font-size:.78rem; font-weight:800; }
+.adm #photos-section { margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--stone-line); }
+.adm #photos-section h3 { margin-top:0; }
+.adm .needs-approval, .adm .approved-block, .adm details.rej { border-radius:14px; }
+.adm .needs-approval { padding:12px; }
+.adm .leadership-list-row { justify-content:space-between; text-align:left; gap:12px; padding:12px 0; }
+.adm .leadership-list-row > span { min-width:0; overflow-wrap:anywhere; }
+.adm .leadership-review-card { padding:clamp(1rem,2.5vw,1.4rem); background:var(--surface); }
+.adm .leadership-review-card img { border-radius:12px; }
+.adm .leadership-review-card > div:last-child { gap:8px; }
+.adm .role-note { padding:12px 15px; border:1px solid var(--stone-line); background:var(--tint); line-height:1.5; }
+.adm .auth-error { display:block; margin:12px 0; padding:12px 14px; border:1px solid color-mix(in srgb,#b42318 25%,var(--stone-line)); border-radius:12px; background:color-mix(in srgb,#b42318 7%,var(--surface)); line-height:1.55; overflow-wrap:anywhere; }
+.adm .sched-badge { display:inline-block; margin-top:5px; padding:4px 8px; border-radius:999px; background:color-mix(in srgb,var(--gold) 22%,var(--surface)); color:var(--navy); font-size:.75rem; font-weight:800; }
+[data-theme=dark] .adm .portal-admin-section, [data-theme=dark] .adm .leadership-section, [data-theme=dark] .adm .leadership-admin-section, [data-theme=dark] .adm .leadership-member-admin, [data-theme=dark] .adm .leadership-review-card, [data-theme=dark] .adm .leadership-prize-card { box-shadow:0 10px 28px rgba(0,0,0,.13); }
+[data-theme=dark] .adm #form form { background:linear-gradient(145deg,var(--surface),color-mix(in srgb,var(--tint) 18%,var(--surface))); }
+@media(max-width:760px) {
+  .adm nav { position:static; overflow:visible; }
+  .adm nav .auth-btn { flex:1 1 auto; }
+  .adm #list .row { align-items:flex-start; }
+  .adm #list .row > span:last-child { width:100%; }
+  .adm .leadership-list-row { align-items:flex-start; }
+}
+@media(prefers-reduced-motion:reduce) { .adm .auth-btn, .adm .home-section-edit, .adm .portal-tile-edit { transition:none; } }
+
+/* Admin editing: keep each editor attached to the item being changed. */
+.adm .admin-edit-item { margin: 10px 0; min-width: 0; }
+.adm .admin-inline-edit:empty { display:none; }
+.adm .admin-inline-edit:not(:empty) { margin: 8px 0 18px; padding: clamp(14px,2vw,22px); border: 1px solid var(--stone-line); border-radius: 14px; background: var(--surface); }
+.adm .admin-inline-edit form { width:100%; min-width:0; box-sizing:border-box; }
+.adm .admin-inline-edit label, .adm .admin-inline-edit input, .adm .admin-inline-edit textarea, .adm .admin-inline-edit select { max-width:100%; box-sizing:border-box; }
+.adm .student-admin-tools { display:grid; grid-template-columns:minmax(0,1fr) minmax(240px, .85fr); align-items:end; gap:16px; margin:20px 0 10px; padding:16px; border:1px solid var(--stone-line); border-radius:14px; background:var(--surface); }
+.adm .student-admin-tools h3 { margin:0; }
+.adm .student-admin-tools label { margin:0; min-width:0; }
+.adm .student-admin-danger-zone { margin-top:30px; padding:16px; border:1px solid color-mix(in srgb,#b42318 30%,var(--stone-line)); border-radius:14px; background:color-mix(in srgb,#b42318 4%,var(--surface)); }
+.adm .student-admin-danger-zone h4 { margin:0; }
+.adm #role-email-templates { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.adm #role-email-templates .leadership-role-management { min-width:0; width:100%; box-sizing:border-box; }
+.adm #role-email-templates .leadership-role-management input,
+.adm #role-email-templates .leadership-role-management textarea,
+.adm #role-email-templates .leadership-role-management select { display:block; width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
+.adm #role-email-templates .leadership-role-management textarea { resize:vertical; }
+.adm .admin-email-card details:not([open]) > :not(summary) { display:none; }
+@media(max-width:760px) {
+  .adm .student-admin-tools { grid-template-columns:minmax(0,1fr); }
+  .adm #role-email-templates { grid-template-columns:minmax(0,1fr); }
+}
