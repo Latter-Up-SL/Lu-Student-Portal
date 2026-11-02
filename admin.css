@@ -273,7 +273,9 @@
   margin-top: 0;
 }
 .adm .photo-approval-panel { grid-area: approval; min-width: 0; }
-.adm .photo-theme-column { grid-area: themes; min-width: 0; }
+.adm .photo-theme-column { grid-area: themes; align-self: start; min-width: 0; }
+.adm .photo-theme-list { display: block; min-width: 0; margin: 0; padding: 0; }
+.adm .photo-theme-list #new { display: inline-flex; align-self: flex-start; margin: 0 0 1rem; }
 .adm .photo-manual-panel { grid-area: manual; min-width: 0; }
 .adm .photo-approval-panel,
 .adm .photo-manual-panel {
@@ -302,7 +304,6 @@
 .adm .photo-approval-content .thumbs figcaption > span { display: flex; flex-wrap: wrap; gap: 5px; }
 .adm .photo-approval-content .thumbs .auth-btn { padding: .45rem .65rem; }
 .adm .photo-manual-panel form { margin: 0; }
-.adm .photo-theme-list #new { margin-top: 0; }
 .adm .photo-theme-column > .admin-schedule { margin-top: 18px; }
 @media (min-width: 900px) {
   .adm .photo-admin-layout {
