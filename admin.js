@@ -1109,6 +1109,11 @@ async function alertsUI(generation = activeViewGeneration) {
       <div class="alert-section alert-master">
         <label class="switch chk"><input type="checkbox" name="enabled" ${roleEmailSettings?.enabled ? "checked" : ""}><span class="switch-track" aria-hidden="true"></span><span class="switch-label">Send weekly role emails</span></label>
       </div>
+      <div class="alert-section alert-master">
+        <p>Send a reminder to everyone assigned a role in the current rotation, using each role's saved follow-up email. Save template changes first. This sends immediately, even if the automatic follow-up schedule is off; the main role-email switch must be on.</p>
+        <button class="auth-btn alt" type="button" id="send-role-reminder">Send role reminder now</button>
+        <small id="role-reminder-message" class="alert-status" role="status"></small>
+      </div>
       <div class="alert-section">
         <h4 class="alert-section-title">${LUIcon("clock", 16)} Schedule</h4>
         <details class="alert-defaults role-email-initial">
@@ -1194,6 +1199,36 @@ async function alertsUI(generation = activeViewGeneration) {
     f.photo_email_body.value = defaultBody;
   };
   const roleEmailForm = document.getElementById("role-email-form");
+  const reminderButton = document.getElementById("send-role-reminder");
+  if (reminderButton) reminderButton.onclick = async () => {
+    const message = document.getElementById("role-reminder-message");
+    if (!roleEmailForm.elements.enabled.checked) {
+      message.textContent = "Turn on and save weekly role emails before sending a reminder.";
+      return;
+    }
+    if (!confirm("Send the saved follow-up email to everyone assigned a Student Leadership role for the current rotation?")) return;
+    reminderButton.disabled = true;
+    message.textContent = "Queuing reminders for current role assignees…";
+    try {
+      const { data, error: reminderError } = await sb.rpc("send_leadership_role_reminders");
+      if (reminderError) {
+        message.textContent = `Could not send role reminders: ${reminderError.message}${reminderError.message.includes("send_leadership_role_reminders") ? " Run update-24-send-leadership-role-reminders.sql in Supabase SQL Editor." : ""}`;
+      } else {
+        const failures = data?.failed || [];
+        const weekStart = data?.week_start
+          ? new Date(`${data.week_start}T00:00:00Z`).toLocaleDateString()
+          : "the current rotation";
+        message.textContent = failures.length
+          ? `Queued ${data.queued} reminder email(s) for the rotation starting ${weekStart}; ${failures.length} could not be queued: ${failures.join("; ")}`
+          : `Queued ${data.queued} reminder email(s) for the rotation starting ${weekStart}. Delivery may take a few minutes.`;
+      }
+    } catch (error) {
+      console.error("Could not request Student Leadership role reminders:", error);
+      message.textContent = `Could not request role reminders: ${error.message || "Unexpected network error."}`;
+    } finally {
+      reminderButton.disabled = false;
+    }
+  };
   if (roleEmailForm) roleEmailForm.querySelectorAll("[data-role-test]").forEach(button => button.onclick = async () => {
     const row = button.closest("[data-role-email]");
     const deliveryType = button.dataset.roleTest;
