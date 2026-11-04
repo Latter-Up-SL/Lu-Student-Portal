@@ -39,6 +39,9 @@ const nextWednesdayAfter = dateString => {
   const daysUntilWednesday = (3 - new Date(date).getUTCDay() + 7) % 7 || 7;
   return new Date(date + daysUntilWednesday * 86400000).toISOString().slice(0, 10);
 };
+const effectiveMeetingDate = dateString => dateString && dateString === dateInEastern()
+  ? nextWednesdayAfter(dateString)
+  : dateString;
 const rotationWeekStartForDate = (weekday, dateString) => {
   const date = Date.parse(`${dateString}T00:00:00Z`);
   const daysSinceRotation = (new Date(date).getUTCDay() - weekday + 7) % 7;
@@ -51,10 +54,11 @@ const thursdayBeforeMeeting = dateString => {
 };
 const leadershipAssignmentWeekStart = settings => {
   const currentWeek = rotationWeekStart(settings.rotation_weekday);
-  if (!settings.rotation_paused || !settings.next_meeting_date) return currentWeek;
-  const today = dateInEastern(), resumeDate = thursdayBeforeMeeting(settings.next_meeting_date);
-  const meetingWeek = rotationWeekStartForDate(settings.rotation_weekday, settings.next_meeting_date);
-  return today >= resumeDate && today <= settings.next_meeting_date && meetingWeek > currentWeek
+  const nextMeetingDate = effectiveMeetingDate(settings.next_meeting_date);
+  if (!settings.rotation_paused || !nextMeetingDate) return currentWeek;
+  const today = dateInEastern(), resumeDate = thursdayBeforeMeeting(nextMeetingDate);
+  const meetingWeek = rotationWeekStartForDate(settings.rotation_weekday, nextMeetingDate);
+  return today >= resumeDate && today <= nextMeetingDate && meetingWeek > currentWeek
     ? meetingWeek
     : currentWeek;
 };
@@ -703,7 +707,7 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
         <textarea name="rotation_pause_reason" rows="3" maxlength="500" placeholder="For example: Student Leadership is on winter break.">${esc(settings.rotation_pause_reason || "")}</textarea>
       </label>
       <label>Next meeting date
-        <input name="next_meeting_date" type="date" value="${esc(settings.next_meeting_date || "")}">
+        <input name="next_meeting_date" type="date" value="${esc(effectiveMeetingDate(settings.next_meeting_date) || "")}">
         <small>If the date is today, it automatically moves to next Wednesday. When rotation is paused, roles appear on the Thursday before the meeting.</small>
       </label>
       <div><button class="auth-btn" type="submit">Save settings</button></div><small id="lh-settings-message"></small>
@@ -714,16 +718,17 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
       <section class="leadership-role-management">
         <h4>Chart roles</h4>
         <p>Manage role names and chart order.</p>
-        <div id="lh-role-list">${roles.map((role, index) => `<div class="leadership-role-admin-row" data-role="${role.id}">
+        <div id="lh-role-list">${roles.map((role, index) => `<div class="leadership-role-admin-row" data-role="${role.id}" data-role-label="${esc(role.name)}">
           <label>Role name<input data-role-name maxlength="80" value="${esc(role.name)}"></label>
           <label>Chart order<input data-role-order type="number" min="1" step="1" value="${index + 1}"></label>
-          <button class="auth-btn alt" type="button" data-save-role>Save name</button><small data-role-message></small>
+          <span><button class="auth-btn alt" type="button" data-save-role>Save name</button>
+          ${ROLE === "admin" ? `<button class="auth-btn alt" type="button" data-delete-role>Delete role</button>` : ""}</span><small data-role-message></small>
         </div>`).join("")}</div>
+        ${roles.length ? `<button class="auth-btn" type="button" id="lh-save-role-order">Save chart role order</button>
+        <small id="lh-role-order-message"></small>` : "<p>No chart roles yet. Add a role to start the chart.</p>"}
         <form id="lh-add-role"><label>New role name<input name="name" maxlength="80" required></label>
           <label class="chk"><input name="unassigned" type="checkbox"> Leave this role unassigned (no eligible members)</label>
           <button class="auth-btn" type="submit">Add role</button><small id="lh-add-role-message"></small></form>
-        <button class="auth-btn" type="button" id="lh-save-role-order">Save chart role order</button>
-        <small id="lh-role-order-message"></small>
       </section>
       <button class="auth-btn alt" type="button" id="lh-shuffle-roles">Shuffle member rotation order</button>
       ${ROLE === "admin" ? `<section class="leadership-role-management">
@@ -854,6 +859,20 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
     leadershipAssignmentsOpen = true;
     if (cur === "_h") await show();
   });
+  document.querySelectorAll("[data-delete-role]").forEach(button => button.onclick = async () => {
+    const row = button.closest("[data-role]");
+    const roleName = row.dataset.roleLabel;
+    if (!confirm(`Delete the "${roleName}" role? This also removes its member eligibility, email template, and weekly overrides.`)) return;
+    button.disabled = true;
+    const { data, error } = await sb.from("leadership_chart_roles").delete().eq("id", row.dataset.role).select("id").maybeSingle();
+    if (error || !data) {
+      row.querySelector("[data-role-message]").textContent = `Could not delete role: ${error?.message || "No role was deleted."}`;
+      button.disabled = false;
+      return;
+    }
+    leadershipAssignmentsOpen = true;
+    if (cur === "_h") await show();
+  });
   document.getElementById("lh-add-role").onsubmit = async event => {
     event.preventDefault();
     const form = event.target, input = form.elements.name, message = document.getElementById("lh-add-role-message");
@@ -869,7 +888,8 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
     leadershipAssignmentsOpen = true;
     if (cur === "_h") await show();
   };
-  document.getElementById("lh-save-role-order").onclick = async event => {
+  const saveRoleOrderButton = document.getElementById("lh-save-role-order");
+  if (saveRoleOrderButton) saveRoleOrderButton.onclick = async event => {
     const button = event.currentTarget, message = document.getElementById("lh-role-order-message");
     const roleRows = [...document.querySelectorAll("[data-role]")];
     const requestedOrder = roleRows.map(row => ({
@@ -1311,18 +1331,16 @@ async function alertsUI(generation = activeViewGeneration) {
         updated_at: new Date().toISOString(),
       });
     }
-    if (!roleTemplates.length) {
-      message.textContent = "Add at least one chart role before saving role email settings.";
-      return;
-    }
     const button = roleEmailForm.querySelector('[type="submit"]');
     button.disabled = true;
     message.textContent = "Saving…";
-    const { error: templateSaveError } = await sb.from("leadership_role_email_templates").upsert(roleTemplates, { onConflict: "role_id" });
-    if (templateSaveError) {
-      message.textContent = `Could not save role email templates: ${templateSaveError.message}`;
-      button.disabled = false;
-      return;
+    if (roleTemplates.length) {
+      const { error: templateSaveError } = await sb.from("leadership_role_email_templates").upsert(roleTemplates, { onConflict: "role_id" });
+      if (templateSaveError) {
+        message.textContent = `Could not save role email templates: ${templateSaveError.message}`;
+        button.disabled = false;
+        return;
+      }
     }
     const { data, error: saveError } = await sb.from("leadership_role_email_settings").update({
       enabled: form.enabled.checked,
@@ -1333,9 +1351,19 @@ async function alertsUI(generation = activeViewGeneration) {
       followup_time: form.followup_time.value,
       updated_at: new Date().toISOString(),
     }).eq("id", 1).select("id").maybeSingle();
-    message.textContent = saveError
-      ? `Role templates were saved, but role email settings could not be saved: ${saveError.message}`
-      : data ? "Role email settings and templates saved." : "Role templates were saved, but no role email settings were updated.";
+    if (saveError) {
+      message.textContent = roleTemplates.length
+        ? `Role templates were saved, but role email settings could not be saved: ${saveError.message}`
+        : `Role email settings could not be saved: ${saveError.message}`;
+    } else if (!data) {
+      message.textContent = roleTemplates.length
+        ? "Role templates were saved, but no role email settings were updated."
+        : "No role email settings were updated.";
+    } else {
+      message.textContent = roleTemplates.length
+        ? "Role email settings and templates saved."
+        : "Role email settings saved; there are no chart roles to email.";
+    }
     button.disabled = false;
   };
   const checkStatus = async () => {

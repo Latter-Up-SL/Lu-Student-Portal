@@ -42,6 +42,16 @@
     return `${part("year")}-${part("month")}-${part("day")}`;
   }
 
+  function nextWednesdayAfter(dateString) {
+    const date = Date.parse(`${dateString}T00:00:00Z`);
+    const daysUntilWednesday = (3 - new Date(date).getUTCDay() + 7) % 7 || 7;
+    return new Date(date + daysUntilWednesday * 86400000).toISOString().slice(0, 10);
+  }
+
+  function effectiveMeetingDate(dateString) {
+    return dateString && dateString === easternToday() ? nextWednesdayAfter(dateString) : dateString;
+  }
+
   function thursdayBefore(dateString) {
     const date = Date.parse(`${dateString}T00:00:00Z`);
     const daysSinceThursday = ((new Date(date).getUTCDay() - 4 + 7) % 7) || 7;
@@ -146,7 +156,10 @@
       return;
     }
 
-    const settings = settingsResult.data;
+    const settings = {
+      ...settingsResult.data,
+      next_meeting_date: effectiveMeetingDate(settingsResult.data.next_meeting_date),
+    };
     const today = easternToday();
     const resumeDate = settings.next_meeting_date ? thursdayBefore(settings.next_meeting_date) : null;
     const rotationPausedNow = settings.rotation_paused && (!resumeDate || today < resumeDate);

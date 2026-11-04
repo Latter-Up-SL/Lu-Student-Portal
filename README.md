@@ -11,6 +11,8 @@ After applying `supabase/update-24-send-leadership-role-reminders.sql`, Admin �
 
 After applying `supabase/update-25-leadership-empty-roles-and-meeting-date.sql`, Admin → Student Leadership can add a role with no eligible members or mark a role unassigned for one rotation week. Both remain visible on the Student Leadership chart without an assignee. If the next meeting date entered is today in Eastern time, it is moved to the next Wednesday.
 
+After update 25, also apply `supabase/update-26-leadership-meeting-date-backfill.sql`. It corrects an already-saved meeting date that is today in Eastern time; the Admin and Student Leadership pages also display the corrected effective date immediately. Admins can delete chart roles in Admin → Student Leadership. Deleting a role removes its member eligibility, email template, and weekly assignment overrides.
+
 Removing email/password from the website login page requires no SQL. To disable password sign-in project-wide, change the Email provider in Supabase Dashboard → Authentication → Sign In / Providers; do not disable global sign-ups, because anonymous sign-ins for the public photo page depend on them.
 
 For existing imported accounts that still have a forced-password-change flag, run this once in the Supabase SQL Editor so Google sign-in is not redirected to the password-change page:

@@ -1036,6 +1036,7 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .leadership-role-admin-row { display:grid; grid-template-columns:minmax(180px,1fr) 120px auto minmax(100px,auto); align-items:end; gap:.75rem; padding:.75rem 0; border-bottom:1px solid var(--stone-line); }
 .leadership-role-admin-row label { display:grid; gap:.35rem; color:var(--navy); font-size:.86rem; font-weight:700; }
 .leadership-role-admin-row input { min-width:0; padding:.55rem; border:1px solid var(--stone-line); border-radius:8px; }
+.leadership-role-admin-row>span { display:flex; flex-wrap:wrap; gap:.45rem; }
 .leadership-role-management form { display:flex; flex-wrap:wrap; align-items:end; gap:.75rem; margin:.9rem 0; }
 .leadership-role-management form label { display:grid; flex:1; min-width:200px; gap:.35rem; color:var(--navy); font-size:.86rem; font-weight:700; }
 .leadership-role-management form input { padding:.55rem; border:1px solid var(--stone-line); border-radius:8px; }
@@ -1056,6 +1057,7 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
   .leadership-list-row { align-items:center; flex-direction:column; }
   .leadership-member-admin fieldset { display:grid; }
   .leadership-role-admin-row { grid-template-columns:1fr 90px; }
+  .leadership-role-admin-row>span { grid-column:1/-1; }
   .leadership-role-admin-row small { grid-column:1/-1; }
 }
 
