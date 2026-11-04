@@ -34,6 +34,11 @@ const dateInEastern = () => {
   const part = name => parts.find(item => item.type === name).value;
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
+const nextWednesdayAfter = dateString => {
+  const date = Date.parse(`${dateString}T00:00:00Z`);
+  const daysUntilWednesday = (3 - new Date(date).getUTCDay() + 7) % 7 || 7;
+  return new Date(date + daysUntilWednesday * 86400000).toISOString().slice(0, 10);
+};
 const rotationWeekStartForDate = (weekday, dateString) => {
   const date = Date.parse(`${dateString}T00:00:00Z`);
   const daysSinceRotation = (new Date(date).getUTCDay() - weekday + 7) % 7;
@@ -662,17 +667,17 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
   const [exclusionsResult, skipRequestsResult, overridesResult] = await Promise.all([
     sb.from("leadership_rotation_exclusions").select("member_email").eq("week_start", weekStart),
     sb.from("leadership_rotation_skip_requests").select("id,week_start,member_email,reason,created_at").eq("status", "pending").order("week_start").order("created_at"),
-    sb.from("leadership_role_overrides").select("role_id,member_email").eq("week_start", weekStart),
+    sb.from("leadership_role_overrides").select("role_id,member_email,is_unassigned").eq("week_start", weekStart),
   ]);
   if (!isCurrentView(generation)) return;
   const rotationFailure = [exclusionsResult, skipRequestsResult, overridesResult].find(result => result.error);
   if (rotationFailure) {
-    app.innerHTML = tabs() + `<p class="auth-error">Weekly rotation settings could not load: ${esc(rotationFailure.error.message)}. Run update-12-leadership-role-overrides-and-photo-alerts.sql in Supabase SQL Editor.</p>`;
+    app.innerHTML = tabs() + `<p class="auth-error">Weekly rotation settings could not load: ${esc(rotationFailure.error.message)}. Run update-12-leadership-role-overrides-and-photo-alerts.sql and update-25-leadership-empty-roles-and-meeting-date.sql in Supabase SQL Editor.</p>`;
     wire();
     return;
   }
   const excludedEmails = new Set(exclusionsResult.data.map(item => item.member_email.toLowerCase()));
-  const overridesByRole = new Map(overridesResult.data.map(item => [item.role_id, item.member_email]));
+  const overridesByRole = new Map(overridesResult.data.map(item => [item.role_id, item]));
   const roleIdsByMember = new Map();
   assignmentResult.data.forEach(row => {
     if (!roleIdsByMember.has(row.member_email)) roleIdsByMember.set(row.member_email, []);
@@ -699,7 +704,7 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
       </label>
       <label>Next meeting date
         <input name="next_meeting_date" type="date" value="${esc(settings.next_meeting_date || "")}">
-        <small>When rotation is paused, roles will appear on the Thursday before this meeting. The pause reason appears on the SL page until then.</small>
+        <small>If the date is today, it automatically moves to next Wednesday. When rotation is paused, roles appear on the Thursday before the meeting.</small>
       </label>
       <div><button class="auth-btn" type="submit">Save settings</button></div><small id="lh-settings-message"></small>
     </form>
@@ -715,6 +720,7 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
           <button class="auth-btn alt" type="button" data-save-role>Save name</button><small data-role-message></small>
         </div>`).join("")}</div>
         <form id="lh-add-role"><label>New role name<input name="name" maxlength="80" required></label>
+          <label class="chk"><input name="unassigned" type="checkbox"> Leave this role unassigned (no eligible members)</label>
           <button class="auth-btn" type="submit">Add role</button><small id="lh-add-role-message"></small></form>
         <button class="auth-btn" type="button" id="lh-save-role-order">Save chart role order</button>
         <small id="lh-role-order-message"></small>
@@ -722,10 +728,11 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
       <button class="auth-btn alt" type="button" id="lh-shuffle-roles">Shuffle member rotation order</button>
       ${ROLE === "admin" ? `<section class="leadership-role-management">
         <h4>Assign a role for ${assignmentWeekLabel}</h4>
-        <p>These assignments override the chart for ${assignmentWeekLabel} only. They do not change anyone's rotation order; clear an assignment to return that role to the rotation.</p>
+        <p>These assignments override the chart for ${assignmentWeekLabel} only. Choose “Leave unassigned this week” to show the role without a person, or “Use rotating assignment” to return it to rotation.</p>
         <div id="lh-weekly-role-overrides">${roles.map(role => `<div class="leadership-role-admin-row" data-week-role="${role.id}">
           <label>${esc(role.name)}<select data-week-member><option value="">Use rotating assignment</option>
-            ${members.map(member => `<option value="${esc(member.email)}" ${overridesByRole.get(role.id) === member.email ? "selected" : ""}>${esc(member.display_name)} (${esc(member.email)})</option>`).join("")}
+            <option value="__unassigned" ${overridesByRole.get(role.id)?.is_unassigned ? "selected" : ""}>Leave unassigned this week</option>
+            ${members.map(member => `<option value="${esc(member.email)}" ${overridesByRole.get(role.id)?.member_email === member.email ? "selected" : ""}>${esc(member.display_name)} (${esc(member.email)})</option>`).join("")}
           </select></label>
           <button class="auth-btn alt" type="button" data-save-week-role>Save assignment</button><small data-week-role-message></small>
         </div>`).join("") || "<p>Add a chart role first.</p>"}</div>
@@ -783,14 +790,16 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
   document.querySelectorAll("[data-save-week-role]").forEach(button => button.onclick = async () => {
     const row = button.closest("[data-week-role]");
     const message = row.querySelector("[data-week-role-message]");
+    const selectedMember = row.querySelector("[data-week-member]").value;
     button.disabled = true;
     const { error } = await sb.rpc("set_leadership_role_override", {
       p_week_start: weekStart,
       p_role_id: row.dataset.weekRole,
-      p_member_email: row.querySelector("[data-week-member]").value || null,
+      p_member_email: selectedMember && selectedMember !== "__unassigned" ? selectedMember : null,
+      p_unassigned: selectedMember === "__unassigned",
     });
     if (error) {
-      message.textContent = `Could not save the assignment for ${assignmentWeekLabel}: ${error.message}`;
+      message.textContent = `Could not save the assignment for ${assignmentWeekLabel}: ${error.message}${error.message.includes("set_leadership_role_override") ? " Run update-25-leadership-empty-roles-and-meeting-date.sql in Supabase SQL Editor." : ""}`;
       button.disabled = false;
       return;
     }
@@ -852,8 +861,11 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
     if (!name) { message.textContent = "Enter a role name."; return; }
     const button = form.querySelector('[type="submit"]');
     button.disabled = true;
-    const { error } = await sb.rpc("add_leadership_chart_role", { p_name: name });
-    if (error) { message.textContent = `Could not add role: ${error.message}`; button.disabled = false; return; }
+    const { error } = await sb.rpc("add_leadership_chart_role", {
+      p_name: name,
+      p_assign_all_members: !form.elements.unassigned.checked,
+    });
+    if (error) { message.textContent = `Could not add role: ${error.message}${error.message.includes("add_leadership_chart_role") ? " Run update-25-leadership-empty-roles-and-meeting-date.sql in Supabase SQL Editor." : ""}`; button.disabled = false; return; }
     leadershipAssignmentsOpen = true;
     if (cur === "_h") await show();
   };
@@ -882,7 +894,14 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
   settingsForm.onsubmit = async event => {
     event.preventDefault();
     const form = event.target.elements, paused = form.rotation_paused.checked;
-    const reason = form.rotation_pause_reason.value.trim(), nextMeetingDate = form.next_meeting_date.value;
+    const reason = form.rotation_pause_reason.value.trim();
+    let nextMeetingDate = form.next_meeting_date.value;
+    let movedMeetingDate = false;
+    if (nextMeetingDate && nextMeetingDate === dateInEastern()) {
+      nextMeetingDate = nextWednesdayAfter(nextMeetingDate);
+      form.next_meeting_date.value = nextMeetingDate;
+      movedMeetingDate = true;
+    }
     if (paused && (!reason || !nextMeetingDate)) {
       settingsMessage.textContent = "When pausing rotation, enter a reason and the next meeting date.";
       return;
@@ -904,7 +923,9 @@ async function studentLeadershipUI(generation = activeViewGeneration) {
     }).eq("id", 1);
     settingsMessage.textContent = error
       ? `Could not save settings: ${error.message}${/show_chat_reports|show_prizes/i.test(error.message) ? " Run update-23-leadership-visibility-and-prize-fulfillment.sql in Supabase SQL Editor." : /rotation_paused|rotation_pause_reason|next_meeting_date/i.test(error.message) ? " Run update-19-leadership-rotation-pause.sql in Supabase SQL Editor." : ""}`
-      : "Settings saved.";
+      : movedMeetingDate
+        ? `Settings saved. Today's meeting date was moved to next Wednesday (${nextMeetingDate}).`
+        : "Settings saved.";
   };
   document.getElementById("lh-points-settings").onsubmit = async event => {
     event.preventDefault();

@@ -51,6 +51,9 @@
   function currentAssignments(members, roles, weekIndex, excludedEmails, overrides) {
     const assigned = new Set();
     return roles.map((role, roleIndex) => {
+      if (overrides.has(role.id) && overrides.get(role.id) === null) {
+        return { role: role.name, member: null };
+      }
       const pinnedEmail = overrides.get(role.id);
       if (pinnedEmail) {
         const member = members.find(candidate => candidate.email.toLowerCase() === pinnedEmail);
@@ -108,7 +111,7 @@
         ${assignments.map(({ role, member }, index) => `<article class="leadership-role-card">
           <span class="leadership-role-number">0${index + 1}</span>
           <div class="leadership-role-copy"><h3>${esc(role)}</h3>
-            <p>${member ? esc(member.display_name) : "No eligible member assigned yet"}</p>
+            <p>${member ? esc(member.display_name) : "No one assigned this week"}</p>
             ${member && member.email.toLowerCase() === userEmail && !excludedEmails.has(userEmail)
               ? skipRequest?.status
                 ? `<small class="leadership-skip-status">Week-off request ${esc(skipRequest.status)}${skipRequest.status === "rejected" ? ". Contact an admin if you still need help." : "."}</small>`
@@ -162,10 +165,10 @@
       sb.from("leadership_member_roles").select("member_email,role_id"),
       sb.from("leadership_rotation_exclusions").select("member_email").eq("week_start", weekStart),
       sb.from("leadership_rotation_skip_requests").select("status").eq("week_start", weekStart).eq("member_email", userEmail).maybeSingle(),
-      sb.from("leadership_role_overrides").select("role_id,member_email").eq("week_start", weekStart),
+      sb.from("leadership_role_overrides").select("role_id,member_email,is_unassigned").eq("week_start", weekStart),
     ]);
     const failed = [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult, overridesResult].find(result => result.error);
-    if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql and update-12-leadership-role-overrides-and-photo-alerts.sql.`);
+    if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql, update-12-leadership-role-overrides-and-photo-alerts.sql, and update-25-leadership-empty-roles-and-meeting-date.sql.`);
     const roleNames = new Map(rolesResult.data.map(item => [item.id, item.name]));
     const assignments = new Map();
     assignmentsResult.data.forEach(item => {
@@ -174,7 +177,10 @@
       if (name) assignments.get(item.member_email).push(name);
     });
     const members = membersResult.data.map(member => ({ ...member, roles: assignments.get(member.email) || [] }));
-    const roleOverrides = new Map(overridesResult.data.map(item => [item.role_id, item.member_email.toLowerCase()]));
+    const roleOverrides = new Map(overridesResult.data.map(item => [
+      item.role_id,
+      item.is_unassigned ? null : item.member_email.toLowerCase(),
+    ]));
 
     const reportChatSection = settings.show_chat_reports ? `<section class="leadership-section leadership-report-section" id="report-section">
         <div class="leadership-section-heading"><div><p class="eyebrow">Share a moment of connection</p><h2>Report My Chats</h2></div>
