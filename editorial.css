@@ -20,8 +20,9 @@
 body {
   font-family: var(--font-body);
   font-optical-sizing: auto;
-  font-size: 1.0625rem;
+  font-size: 1.125rem;
   line-height: 1.7;
+  font-weight: 500;
   color: var(--navy);
   background: var(--cream);
 }
@@ -85,12 +86,12 @@ main > section:last-of-type { padding-bottom: var(--section-space); }
 .hero h1 {
   font-size: clamp(2.8rem, 8.6vw, 8rem); line-height: .95; margin: 0 auto; text-wrap: balance; overflow-wrap: break-word;
 }
-.hero h1 .hl { color: var(--junior-accent); font-family: var(--font-script); font-size: .82em; font-weight: 400; box-shadow: inset 0 -.2em 0 var(--gold); }
+.hero h1 .hl { color: var(--gold); font-family: var(--font-display); font-size: inherit; font-weight: inherit; box-shadow: inset 0 -.12em 0 var(--gold); }
 .hero-mark {
   position: absolute; width: clamp(84px, 12vw, 170px); height: auto;
   right: clamp(0px, 5vw, 80px); top: clamp(62%, 66%, 70%); transform: rotate(9deg);
 }
-.hero-lede { max-width: 36ch; margin: clamp(48px, 6vw, 88px) auto 0; font-size: clamp(1.05rem, 1.5vw, 1.3rem); color: var(--navy); }
+.hero-lede { width: min(100%, 72ch); margin: clamp(48px, 6vw, 88px) auto 0; font-size: clamp(1.05rem, 1.5vw, 1.3rem); color: var(--navy); }
 /* ---------- asymmetric editorial grid for home sections ---------- */
 .links > .wrap, .announcements > .wrap, .videos > .wrap, .faq > .wrap,
 .announcements-page > .wrap, .videos-page > .wrap {
@@ -797,3 +798,47 @@ main.adm[style*="max-width:460px"] .auth-btn { border-radius: 10px; }
   box-shadow: 0 0 18px color-mix(in srgb, var(--gold) 45%, transparent), 0 16px 34px -20px rgba(23, 38, 79, .55) !important;
 }
 .home-page #videos-preview-list .video-card-body { padding: 18px 22px 24px !important; }
+
+/* Keep supporting copy and interface labels comfortably readable. */
+.section-sub, .hero-lede, .photo-hero-lede, .video-desc,
+.portal-card .card-desc { font-size: 1.05rem !important; }
+small,
+.eyebrow,
+.site-nav a,
+.view-all-link,
+.announcement-date,
+.video-date,
+.back-link,
+.photo-round-badge,
+.photo-theme-link,
+.card-cta,
+.calendar-secondary,
+.portal-card .card-cta,
+.portal-card .calendar-secondary,
+.local-preview-notice,
+.menu .who,
+.local-preview-label,
+.video-preview-label,
+.thumbs figcaption,
+.portal-tile-drag-handle,
+.portal-tiles-admin > summary span,
+.pc-round-label,
+.pc-btn,
+.pc-link,
+.footer-note,
+.footer-links h3,
+.sched-badge,
+.via-badge,
+.leadership-chart-note,
+.leadership-role-copy h3,
+.leadership-rotation-badge,
+.leadership-section-heading .eyebrow,
+.leadership-role-admin-row label,
+.leadership-role-management form label,
+.admin-page-kicker,
+.admin-section-kicker,
+.admin-feature-pills span,
+.home-drag-hint {
+  font-size: .9rem !important;
+}
+.auth-btn { font-size: 1rem !important; }

@@ -43,6 +43,18 @@
   .adm nav .auth-btn { flex: 1 1 auto; }
 }
 
+.adm .alert-hint,
+.adm .alert-connection-hint,
+.adm .alert-status,
+.adm .alert-stat small,
+.adm .alert-role-col small,
+.adm .alert-defaults-title small,
+.adm .alert-role-col .auth-btn,
+.adm .adm-head .eyebrow,
+.adm nav .auth-btn {
+  font-size: .9rem !important;
+}
+
 /* ---------- panels: replace flat top-rule forms with soft cards ---------- */
 .adm form, .portal-admin-section, .admin-schedule, .adm .leadership-section, .adm .leadership-admin-section {
   border: var(--adm-border); border-radius: var(--adm-radius); background: var(--surface); box-shadow: var(--adm-shadow);
