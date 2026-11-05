@@ -3,7 +3,7 @@
   const C = window.LU_CONFIG; window.LUsb = window.LUsb || supabase.createClient(C.url, C.key);
   const sb = window.LUsb, host = document.getElementById("site-header"); if (!host) return;
   const page = location.pathname.split("/").pop() || "index.html";
-  const links = [["Home", "index.html"], ["Announcements", "announcements.html"], ["Videos", "videos.html"], ["Photo Challenge", "photos.html"]];
+  const links = [["Home", "index.html"], ["Announcements", "announcements.html"], ["Videos", "videos.html"], ["Your Schedule", "schedule.html"], ["Photo Challenge", "photos.html"]];
   const mark = '<svg viewBox="0 0 64 64" role="img" aria-label="Latter UP home"><defs><linearGradient id="luNavy" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#263B70"/><stop offset="1" stop-color="#111A44"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="18" fill="url(#luNavy)"/><circle cx="45" cy="17" r="5" fill="#FFC83D"/><path d="M13 42 25 21l9 15 6-9 12 19H13Z" fill="#F6F8FF" opacity=".96"/><path d="M13 46h39" stroke="#FFC83D" stroke-width="4" stroke-linecap="round"/><path d="m25 21 4 7-4 2-4-2Z" fill="#FFC83D"/></svg>';
   const el = document.createElement("header"); el.className = "site-header";
   el.innerHTML = `<div class="wrap header-inner"><a class="brand" href="index.html">${mark}</a>

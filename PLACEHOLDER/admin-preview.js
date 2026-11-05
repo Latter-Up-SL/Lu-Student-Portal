@@ -29,7 +29,7 @@
     if (selected === "announcements") return renderRows(data.announcements, "title", "text");
     if (selected === "videos") return renderRows(data.videos, "title", "description");
     if (selected === "themes") return renderRows([data.currentTheme, ...data.pastThemes], "title", "description");
-    if (selected === "home") return `<div class="local-admin-section"><h3>Home page sections</h3><p>Reorder and show or hide sections in the live home page editor.</p>${["Tools", "Announcements", "Videos", "Questions", "Photo Challenge"].map((item, index) => `<label><input type="checkbox" checked disabled> ${item} <span>Section ${index + 1}</span></label>`).join("")}</div>`;
+    if (selected === "home") return `<div class="local-admin-section"><h3>Home page sections</h3><p>Reorder and show or hide sections in the live home page editor.</p>${["Tools", "Announcements", "Videos", "Your Schedule embed", "Questions", "Photo Challenge"].map((item, index) => `<label><input type="checkbox" checked disabled> ${item} <span>Section ${index + 1}</span></label>`).join("")}</div>`;
     if (selected === "students") return renderRows([{ title: "Sample Student", email: "student@example.org" }, { title: "Sample Family", email: "family@example.org" }], "title", "email");
     if (selected === "admins") return renderRows([{ title: "Sample Administrator", email: "admin@example.org" }], "title", "email");
     if (selected === "leadership") return renderRows([{ title: "Sample Student Leader", email: "leader@example.org" }], "title", "email");

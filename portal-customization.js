@@ -11,6 +11,15 @@
     {title:"Trackers",description:"Your Success Circle and Homeroom to-do and focus lists.",url:"https://pathwaysandpossibilities.netlify.app/tracker",cta:"Open Tracker",icon:"compass"},
     {title:"Feedback",description:"Give feedback on anything LU.",url:"https://docs.google.com/forms/d/e/1FAIpQLSfwVwucRiMsnTMPcP-LV25BrLkVb_dBFtxDyX0xMIMqguZisQ/viewform",cta:"Open Form",icon:"document"}
   ];
+  const defaultHomeSections = [
+    {id:"hero",label:"Welcome header",enabled:true},
+    {id:"links",label:"Quick-link tiles",enabled:true},
+    {id:"announcements",label:"Latest announcements",enabled:true},
+    {id:"videos",label:"Latest videos",enabled:true},
+    {id:"schedule-embed",label:"Your Schedule embed",enabled:true},
+    {id:"faq",label:"Frequently asked questions",enabled:true},
+    {id:"photo-challenge",label:"Photo Challenge shortcut",enabled:true}
+  ];
   const icons = {
     calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
     drive:'<path d="M8.6 3h6.8l6.1 10.6-3.4 5.9H5.9L2.5 13.6z"/>',
@@ -43,15 +52,22 @@
   }
   async function run() {
     const grid=document.getElementById("portal-card-grid"); if(!grid) return;
-    let banner={enabled:false,text:"",link_text:"Learn more",link_url:""}, tiles=defaults, homeSections=null;
+    let banner={enabled:false,text:"",link_text:"Learn more",link_url:""}, tiles=defaults, homeSections=defaultHomeSections.map(item=>({...item}));
     if(!window.LU_LOCAL_PREVIEW) {
       const { data, error } = await sb.rpc("portal_public_config");
       if (error) console.error("Public portal settings could not be loaded:", error);
       if (data) {
         banner = { ...banner, ...(data.portal_banner || {}) };
         if (Array.isArray(data.portal_tiles) && data.portal_tiles.length) tiles = data.portal_tiles;
-        if (Array.isArray(data.portal_home_sections) && data.portal_home_sections.length) {
-          homeSections = data.portal_home_sections.filter(item => item.id !== "shortcuts");
+        if (Array.isArray(data.portal_home_sections)) {
+          homeSections = data.portal_home_sections
+            .filter(item => item && item.id !== "shortcuts" && defaultHomeSections.some(section => section.id === item.id))
+            .map(item => ({...item}));
+          defaultHomeSections.filter(section=>!homeSections.some(item=>item.id===section.id)).forEach(missing=>{
+            const defaultIndex=defaultHomeSections.findIndex(section=>section.id===missing.id);
+            const next=homeSections.findIndex(item=>defaultHomeSections.findIndex(section=>section.id===item.id)>defaultIndex);
+            homeSections.splice(next<0?homeSections.length:next,0,{...missing});
+          });
         }
       }
     }
@@ -84,7 +100,7 @@
         box.hidden=false;
       }catch(e){console.warn("Photo challenge round unavailable:",e);}})();
       if(homeSections){
-        const map={hero:document.getElementById("top"),links:document.getElementById("links"),announcements:document.getElementById("announcements"),videos:document.getElementById("videos"),faq:document.getElementById("faq"),"photo-challenge":photo};
+        const map={hero:document.getElementById("top"),links:document.getElementById("links"),announcements:document.getElementById("announcements"),videos:document.getElementById("videos"),"schedule-embed":document.getElementById("schedule-embed"),faq:document.getElementById("faq"),"photo-challenge":photo};
         homeSections.forEach(item=>{const el=map[item.id];if(!el)return;el.hidden=item.enabled===false;main.appendChild(el);});
       }
     }

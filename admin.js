@@ -439,6 +439,7 @@ const DEFAULT_HOME_SECTIONS = [
   {id:"links", label:"Quick-link tiles", enabled:true},
   {id:"announcements", label:"Latest announcements", enabled:true},
   {id:"videos", label:"Latest videos", enabled:true},
+  {id:"schedule-embed", label:"Your Schedule embed", enabled:true},
   {id:"faq", label:"Frequently asked questions", enabled:true},
   {id:"photo-challenge", label:"Photo Challenge shortcut", enabled:true}
 ];
@@ -455,7 +456,7 @@ async function homeLayoutUI(host = app, generation = activeViewGeneration) {
     const next=sections.findIndex(s=>DEFAULT_HOME_SECTIONS.findIndex(d=>d.id===s.id)>defaultIndex);
     sections.splice(next<0?sections.length:next,0,missing);
   });
-  host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Home page layout</h3><p>Choose which sections appear on the home page and change their order. The Photo Challenge shortcut gives students a clear path to share photos. Your tiles, announcement banner, and content remain intact.</p>${error ? `<p class="auth-error">Couldn't load settings: ${esc(error.message)}</p>` : ""}<div id="home-section-editor" aria-label="Drag sections to reorder">${sections.map((s)=>`<div class="home-section-edit" data-section="${s.id}" draggable="true"><span class="home-drag-handle" aria-hidden="true">Move</span><label class="inline-check"><input type="checkbox" name="enabled" ${s.enabled!==false?"checked":""}> ${esc(s.label)}</label><span class="home-drag-hint">Drag to reorder</span></div>`).join("")}</div><div class="portal-admin-actions"><button class="auth-btn" id="save-home-layout">Save home page</button></div><small id="home-layout-msg"></small></section>`;
+  host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Home page layout</h3><p>Choose which sections appear on the home page and change their order, including the Your Schedule embed. The Photo Challenge shortcut gives students a clear path to share photos. Your tiles, announcement banner, and content remain intact.</p>${error ? `<p class="auth-error">Couldn't load settings: ${esc(error.message)}</p>` : ""}<div id="home-section-editor" aria-label="Drag sections to reorder">${sections.map((s)=>`<div class="home-section-edit" data-section="${s.id}" draggable="true"><span class="home-drag-handle" aria-hidden="true">Move</span><label class="inline-check"><input type="checkbox" name="enabled" ${s.enabled!==false?"checked":""}> ${esc(s.label)}</label><span class="home-drag-hint">Drag to reorder</span></div>`).join("")}</div><div class="portal-admin-actions"><button class="auth-btn" id="save-home-layout">Save home page</button></div><small id="home-layout-msg"></small></section>`;
   if (host === app) wire();
   const editor=document.getElementById("home-section-editor");
   let dragging=null;
