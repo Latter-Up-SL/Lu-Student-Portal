@@ -4,7 +4,7 @@
   const sb = window.LUsb, host = document.getElementById("site-header"); if (!host) return;
   const page = location.pathname.split("/").pop() || "index.html";
   const links = [["Home", "index.html"], ["Announcements", "announcements.html"], ["Videos", "videos.html"], ["Photo Challenge", "photos.html"]];
-  const mark = '<svg viewBox="0 0 64 64" role="img" aria-label="Latter UP home"><defs><linearGradient id="luNavy" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#263B70"/><stop offset="1" stop-color="#111A44"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="18" fill="url(#luNavy)"/><circle cx="45" cy="17" r="5" fill="#FFC83D"/><path d="M13 42 25 21l9 15 6-9 12 19H13Z" fill="#F6F8FF" opacity=".96"/><path d="M13 46h39" stroke="#FFC83D" stroke-width="4" stroke-linecap="round"/><path d="m25 21 4 7-4 2-4-2Z" fill="#FFC83D"/></svg>';
+  const mark = '<svg viewBox="0 0 64 64" role="img" aria-label="Latter UP home"><defs><linearGradient id="luNavy" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#123C72"/><stop offset="1" stop-color="#001F55"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="18" fill="url(#luNavy)"/><circle cx="45" cy="17" r="5" fill="#E1A730"/><path d="M13 42 25 21l9 15 6-9 12 19H13Z" fill="#FCFBFA" opacity=".96"/><path d="M13 46h39" stroke="#E1A730" stroke-width="4" stroke-linecap="round"/><path d="m25 21 4 7-4 2-4-2Z" fill="#E1A730"/></svg>';
   const el = document.createElement("header"); el.className = "site-header";
   el.innerHTML = `<div class="wrap header-inner"><a class="brand" href="index.html">${mark}</a>
     <nav class="site-nav" id="nav" aria-label="Primary">${links.map(([t, h]) => `<a href="${h}" ${h === page ? 'aria-current="page"' : ""}>${t}</a>`).join("")}</nav>
@@ -71,6 +71,11 @@
     scheduleLink.textContent = "Your Schedule";
     if (page === "schedule.html") scheduleLink.setAttribute("aria-current", "page");
     $("nav").insertBefore(scheduleLink, $("nav").querySelector('a[href="photos.html"]'));
+    const raffleLink = document.createElement("a");
+    raffleLink.href = "raffle.html";
+    raffleLink.textContent = "Student Raffle";
+    if (page === "raffle.html") raffleLink.setAttribute("aria-current", "page");
+    $("nav").appendChild(raffleLink);
     const u = session.user, name = u.app_metadata?.full_name || u.email, adm = await (async () => { const r = await sb.rpc("my_role"); return r.data || ((await sb.rpc("is_admin")).data ? "admin" : "student"); })();
     if (adm === "admin" || adm === "leader") {
       const { data: canViewLeadershipHub, error: leadershipHubError } = await sb.rpc("can_view_leadership_hub");

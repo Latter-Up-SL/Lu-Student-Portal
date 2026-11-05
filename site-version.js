@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.36.14";
+  const VERSION = "0.36.15";
   document.querySelectorAll("[data-site-version]").forEach(element => {
     element.textContent = `Version ${VERSION}`;
   });

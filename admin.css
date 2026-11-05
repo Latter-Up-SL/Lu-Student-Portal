@@ -34,7 +34,7 @@
 }
 .adm nav .auth-btn:hover { background: var(--tint); color: var(--navy) !important; }
 .adm nav .auth-btn.on, .adm nav .auth-btn.on:hover {
-  background: var(--gold); color: #17264F !important;
+  background: var(--gold); color: var(--navy) !important;
   box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--gold-deep) 70%, transparent);
 }
 .adm nav .auth-btn:focus-visible { outline: none; box-shadow: var(--adm-focus); }
