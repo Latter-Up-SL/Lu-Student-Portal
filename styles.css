@@ -775,8 +775,7 @@ section { padding: 64px 0; }
 .up{display:grid;gap:.4rem;font-weight:600;margin:1rem 0}
 .viewer{margin:2rem 0;padding:1rem;border:1px solid var(--stone);border-radius:12px;background:var(--surface)}.viewer:fullscreen{background:#111;color:#fff;display:flex;flex-direction:column;justify-content:center}
 .vh{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin:.5rem 0}
-.car{display:flex;align-items:center;gap:.5rem}.car figure{flex:1;text-align:center;margin:0}.car img{max-width:100%;max-height:70vh;border-radius:8px}
-.car>button{font-size:2rem;background:none;border:0;cursor:pointer;color:inherit}.viewer video{width:100%;max-height:70vh}
+.viewer video{width:100%;max-height:70vh}
 .reel-stage{width:100%;overflow:hidden;background:#07152b;box-shadow:0 18px 48px rgba(0,0,0,.2)}
 .reel-stage canvas{display:block;width:100%;height:auto;aspect-ratio:16/9}
 .reel-message{min-height:1.5em;margin:.5rem 0;color:var(--slate)}

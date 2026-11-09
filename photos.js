@@ -194,7 +194,7 @@
     const ph = data ?? [];
     const urls = await sign("photos", ph.map(p => p.image_path));
     const vid = t.video_path ? (await sign("media", [t.video_path]))[t.video_path] : null;
-    let i = 0, playbackFrame = 0, playbackStartedAt = 0, playbackElapsed = 0, playbackRunning = false, reelImages = null, exporting = false;
+    let playbackFrame = 0, playbackStartedAt = 0, playbackElapsed = 0, playbackRunning = false, reelImages = null, reelImagesPromise = null, exporting = false;
     const canvas = document.createElement("canvas");
     canvas.id = "reel-canvas";
     canvas.width = 1280;
@@ -204,14 +204,15 @@
     const slideDuration = 3600, totalDuration = ph.length * slideDuration;
     v.hidden = false; v.scrollIntoView({ behavior: "smooth" });
     v.innerHTML = `<div class="vh"><h3>${esc(t.title)}</h3><button class="auth-btn alt" id="vc">Close</button></div>${vid ? `<video controls src="${vid}"></video>` : t.video_path ? missingPhoto("Video") : ""}
-      ${ph.length ? `<div class="reel-stage" id="reel-stage" hidden></div><p id="reel-message" role="status" class="reel-message"></p><div class="car"><button id="pv" aria-label="Previous">‹</button><figure><img id="im" alt=""><span id="im-missing" class="photo-missing-file" hidden>Photo unavailable</span><figcaption id="cp"></figcaption></figure><button id="nx" aria-label="Next">›</button></div>
-      <div class="vh"><button class="auth-btn" id="pl">Play reel</button><button class="auth-btn" id="export-reel">Export MP4</button><button class="auth-btn alt" id="fs">Full screen</button><button class="auth-btn alt" id="mu">Music: on</button></div><small class="reel-export-note">Creates an animated 720p MP4 in your browser. The first export downloads the video encoder (~30 MB); photos stay on this device.</small><h4 class="all-title">All ${ph.length} photo${ph.length === 1 ? "" : "s"} from this theme</h4><div class="thumbs theme-all">${ph.map((x, k) => `<figure><button type="button" class="thumb-btn" data-k="${k}" aria-label="View photo by ${esc(x.submitted_by)}">${urls[x.image_path] ? `<img src="${urls[x.image_path]}" alt="">` : missingPhoto(`Photo by ${x.submitted_by}`)}</button><figcaption>${esc(x.submitted_by)}</figcaption></figure>`).join("")}</div>` : "<p>No approved photos for this theme.</p>"}`;
+      ${ph.length ? `<div class="reel-stage" id="reel-stage"></div><p id="reel-message" role="status" class="reel-message"></p>
+      <div class="vh"><button class="auth-btn" id="pl">Play reel</button><button class="auth-btn" id="export-reel">Export MP4</button><button class="auth-btn alt" id="fs">Full screen</button><button class="auth-btn alt" id="mu">Music: on</button></div><small class="reel-export-note">Creates an animated 720p MP4 in your browser. The first export downloads the video encoder (~30 MB); photos stay on this device.</small><h4 class="all-title">All ${ph.length} photo${ph.length === 1 ? "" : "s"} from this theme</h4><div class="thumbs theme-all">${ph.map(x => `<figure>${urls[x.image_path] ? `<img src="${urls[x.image_path]}" alt="">` : missingPhoto(`Photo by ${x.submitted_by}`)}<figcaption>${esc(x.submitted_by)}</figcaption></figure>`).join("")}</div>` : "<p>No approved photos for this theme.</p>"}`;
     if (!ph.length) {
       $("vc").onclick = () => { document.fullscreenElement && document.exitFullscreen(); v.hidden = true; };
       return;
     }
     const stage = $("reel-stage"), message = $("reel-message"), playButton = $("pl"), exportButton = $("export-reel");
     stage.appendChild(canvas);
+    stage.setAttribute("aria-label", `${t.title} animated photo reel`);
     const loadImage = index => new Promise((resolve, reject) => {
       const url = urls[ph[index]?.image_path];
       if (!url) return reject(new Error(`Photo ${index + 1} could not be loaded.`));
@@ -223,15 +224,21 @@
     });
     const prepareImages = async () => {
       if (reelImages) return reelImages;
-      const images = [];
-      for (let start = 0; start < ph.length; start += 4) {
-        const batch = await Promise.all(Array.from({ length: Math.min(4, ph.length - start) }, (_, index) => loadImage(start + index)));
-        images.push(...batch);
-        message.textContent = `Preparing photos ${images.length} of ${ph.length}…`;
-      }
-      reelImages = images;
-      message.textContent = "";
-      return images;
+      if (!reelImagesPromise) reelImagesPromise = (async () => {
+        const images = [];
+        for (let start = 0; start < ph.length; start += 4) {
+          const batch = await Promise.all(Array.from({ length: Math.min(4, ph.length - start) }, (_, index) => loadImage(start + index)));
+          images.push(...batch);
+          message.textContent = `Preparing photos ${images.length} of ${ph.length}…`;
+        }
+        reelImages = images;
+        message.textContent = "";
+        return images;
+      })().catch(error => {
+        reelImagesPromise = null;
+        throw error;
+      });
+      return reelImagesPromise;
     };
     const drawPhoto = (image, progress, alpha = 1, index = 0) => {
       if (!image) return;
@@ -280,6 +287,9 @@
       ctx.fillRect(0, 712, canvas.width * Math.min(1, elapsed / totalDuration), 8);
       return index;
     };
+    prepareImages().then(() => drawFrame(0)).catch(error => {
+      message.textContent = `Reel could not start: ${error.message || error}`;
+    });
     const stopPlayback = reset => {
       if (playbackFrame) cancelAnimationFrame(playbackFrame);
       playbackFrame = 0;
@@ -291,13 +301,6 @@
     };
     const showReelStage = () => {
       stage.hidden = false;
-      v.querySelector(".car").hidden = true;
-      v.querySelector(".theme-all").hidden = true;
-    };
-    const showCarousel = () => {
-      stage.hidden = true;
-      v.querySelector(".car").hidden = false;
-      v.querySelector(".theme-all").hidden = false;
     };
     const startPlayback = async () => {
       if (playbackRunning) return stopPlayback(false);
@@ -435,16 +438,6 @@
         exporting = false;
       }
     };
-    const go = direction => {
-      i = (i + direction + ph.length) % ph.length;
-      const url = urls[ph[i].image_path];
-      $("im").hidden = !url;
-      $("im-missing").hidden = !!url;
-      $("im-missing").style.display = url ? "none" : "grid";
-      if (url) $("im").src = url;
-      else $("im").removeAttribute("src");
-      $("cp").textContent = `${ph[i].submitted_by} · ${i + 1}/${ph.length}`;
-    };
     const close = () => {
       stopPlayback(true);
       if (reelImages) reelImages.forEach(image => { image.onload = null; image.onerror = null; image.src = ""; });
@@ -452,7 +445,6 @@
       v.hidden = true;
     };
     $("vc").onclick = close;
-    go(0);
     $("mu").onclick = async () => {
       LUMusic.enabled = !LUMusic.enabled;
       $("mu").textContent = "Music: " + (LUMusic.enabled ? "on" : "off");
@@ -465,15 +457,6 @@
         message.textContent = `Music could not start: ${error.message || error}`;
       }
     };
-    v.querySelectorAll("[data-k]").forEach(button => button.onclick = () => {
-      stopPlayback(true);
-      showCarousel();
-      i = +button.dataset.k;
-      go(0);
-      v.querySelector(".car").scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-    $("pv").onclick = () => { stopPlayback(true); showCarousel(); go(-1); };
-    $("nx").onclick = () => { stopPlayback(true); showCarousel(); go(1); };
     playButton.onclick = startPlayback;
     exportButton.onclick = exportMp4;
     $("fs").onclick = () => v.requestFullscreen?.();
