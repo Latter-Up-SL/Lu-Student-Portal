@@ -52,6 +52,17 @@
     $("past").parentElement.hidden = true;
     return $("si").onclick = () => (location.href = "login.html?next=" + encodeURIComponent(location.pathname.split("/").pop() || "index.html"));
   }
+  let canExportReel = false;
+  if (session && !PUB) {
+    const { data: role, error: roleError } = await sb.rpc("my_role");
+    if (roleError) console.error("Photo reel export permissions could not be checked:", roleError);
+    else if (role) canExportReel = role === "admin" || role === "leader";
+    else {
+      const { data: isAdmin, error: adminError } = await sb.rpc("is_admin");
+      if (adminError) console.error("Photo reel admin permissions could not be checked:", adminError);
+      canExportReel = !!isAdmin;
+    }
+  }
   const uid = session?.user?.id ?? null, now = new Date();
   const { data: themeData, error: themeError } = await sb.from("themes").select("*").order("starts_at", { ascending: false });
   if (themeError) {
@@ -205,12 +216,12 @@
     v.hidden = false; v.scrollIntoView({ behavior: "smooth" });
     v.innerHTML = `<div class="vh"><h3>${esc(t.title)}</h3><button class="auth-btn alt" id="vc">Close</button></div>${vid ? `<video controls src="${vid}"></video>` : t.video_path ? missingPhoto("Video") : ""}
       ${ph.length ? `<div class="reel-stage" id="reel-stage"></div><p id="reel-message" role="status" class="reel-message"></p>
-      <div class="vh"><button class="auth-btn" id="pl">Play reel</button><button class="auth-btn" id="export-reel">Export MP4</button><button class="auth-btn alt" id="fs">Full screen</button><button class="auth-btn alt" id="mu">Music: on</button></div><small class="reel-export-note">Creates an animated 720p MP4 in your browser. The first export downloads the video encoder (~30 MB); photos stay on this device.</small><h4 class="all-title">All ${ph.length} photo${ph.length === 1 ? "" : "s"} from this theme</h4><div class="thumbs theme-all">${ph.map(x => `<figure>${urls[x.image_path] ? `<img src="${urls[x.image_path]}" alt="">` : missingPhoto(`Photo by ${x.submitted_by}`)}<figcaption>${esc(x.submitted_by)}</figcaption></figure>`).join("")}</div>` : "<p>No approved photos for this theme.</p>"}`;
+      <div class="vh"><button class="auth-btn" id="pl">Play reel</button>${canExportReel ? '<button class="auth-btn" id="export-reel">Export MP4</button>' : ""}<button class="auth-btn alt" id="mu">Music: on</button></div>${canExportReel ? '<small class="reel-export-note">Creates an animated 720p MP4 in your browser. The first export downloads the video encoder (~30 MB); photos stay on this device.</small>' : ""}<h4 class="all-title">All ${ph.length} photo${ph.length === 1 ? "" : "s"} from this theme</h4><div class="thumbs theme-all">${ph.map(x => `<figure>${urls[x.image_path] ? `<img src="${urls[x.image_path]}" alt="">` : missingPhoto(`Photo by ${x.submitted_by}`)}<figcaption>${esc(x.submitted_by)}</figcaption></figure>`).join("")}</div>` : "<p>No approved photos for this theme.</p>"}`;
     if (!ph.length) {
-      $("vc").onclick = () => { document.fullscreenElement && document.exitFullscreen(); v.hidden = true; };
+      $("vc").onclick = () => { v.hidden = true; };
       return;
     }
-    const stage = $("reel-stage"), message = $("reel-message"), playButton = $("pl"), exportButton = $("export-reel");
+    const stage = $("reel-stage"), message = $("reel-message"), playButton = $("pl"), exportButton = canExportReel ? $("export-reel") : null;
     stage.appendChild(canvas);
     stage.setAttribute("aria-label", `${t.title} animated photo reel`);
     const loadImage = index => new Promise((resolve, reject) => {
@@ -441,7 +452,6 @@
     const close = () => {
       stopPlayback(true);
       if (reelImages) reelImages.forEach(image => { image.onload = null; image.onerror = null; image.src = ""; });
-      document.fullscreenElement && document.exitFullscreen();
       v.hidden = true;
     };
     $("vc").onclick = close;
@@ -458,9 +468,7 @@
       }
     };
     playButton.onclick = startPlayback;
-    exportButton.onclick = exportMp4;
-    $("fs").onclick = () => v.requestFullscreen?.();
-    v.onkeydown = event => { if (event.key === "ArrowRight") $("nx").click(); if (event.key === "ArrowLeft") $("pv").click(); };
+    if (exportButton) exportButton.onclick = exportMp4;
     v.tabIndex = 0;
     v.focus();
   }
