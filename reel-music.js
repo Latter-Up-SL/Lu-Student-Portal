@@ -3,7 +3,7 @@
 (() => {
   const BPM = 124, BEAT = 60 / BPM, STEP = BEAT / 4;
   const M = window.LUMusic = { enabled: true, interval: Math.round(BEAT * 4 * 1000) };
-  let ctx, master, noiseBuf, timer = null, nextT = 0, step = 0;
+  let ctx, master, noiseBuf, timer = null, nextT = 0, step = 0, recordingDestination = null;
   const hz = n => 440 * Math.pow(2, (n - 69) / 12);
   const ROOT = [60, 55, 57, 53], TRIAD = [[0, 4, 7], [0, 4, 7], [0, 3, 7], [0, 4, 7]];
   function tone(t, n, d, type, v) {
@@ -33,17 +33,27 @@
     if (s === 0) tri.forEach(x => tone(t, r + x, BEAT * 3.6, "sine", 0.1));
   }
   function tick() { while (nextT < ctx.currentTime + 0.15) { play(step++, nextT); nextT += STEP; } }
-  M.start = () => {
+  M.createRecordingDestination = async () => {
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    await ctx.resume();
+    return ctx.createMediaStreamDestination();
+  };
+  M.setRecordingDestination = destination => {
+    if (recordingDestination && master) master.disconnect(recordingDestination);
+    recordingDestination = destination;
+    if (recordingDestination && master) master.connect(recordingDestination);
+  };
+  M.start = async () => {
     if (!M.enabled || timer) return;
-    try {
-      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
-      if (!noiseBuf) { noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.2, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
-      ctx.resume(); master = ctx.createGain(); master.gain.setValueAtTime(0.0001, ctx.currentTime); master.gain.exponentialRampToValueAtTime(0.32, ctx.currentTime + 0.4); master.connect(ctx.destination);
-      step = 0; nextT = ctx.currentTime + 0.05; timer = setInterval(tick, 25);
-    } catch (e) { timer = null; }
+    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+    await ctx.resume();
+    if (!noiseBuf) { noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.2, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+    master = ctx.createGain(); master.gain.setValueAtTime(0.0001, ctx.currentTime); master.gain.exponentialRampToValueAtTime(0.32, ctx.currentTime + 0.4); master.connect(ctx.destination);
+    if (recordingDestination) master.connect(recordingDestination);
+    step = 0; nextT = ctx.currentTime + 0.05; timer = setInterval(tick, 25);
   };
   M.stop = () => {
     if (!timer) return; clearInterval(timer); timer = null;
-    try { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setValueAtTime(master.gain.value, ctx.currentTime); master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3); const m = master; setTimeout(() => m.disconnect(), 400); } catch (e) {}
+    try { master.gain.cancelScheduledValues(ctx.currentTime); master.gain.setValueAtTime(master.gain.value, ctx.currentTime); master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3); const m = master; setTimeout(() => { m.disconnect(); if (master === m) master = null; }, 400); } catch (e) {}
   };
 })();

@@ -194,16 +194,249 @@
     const ph = data ?? [];
     const urls = await sign("photos", ph.map(p => p.image_path));
     const vid = t.video_path ? (await sign("media", [t.video_path]))[t.video_path] : null;
-    let i = 0, timer = null;
+    let i = 0, playbackFrame = 0, playbackStartedAt = 0, playbackElapsed = 0, playbackRunning = false, reelImages = null, exporting = false;
+    const canvas = document.createElement("canvas");
+    canvas.id = "reel-canvas";
+    canvas.width = 1280;
+    canvas.height = 720;
+    canvas.setAttribute("aria-label", `Animated photo reel for ${t.title}`);
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const slideDuration = 3600, totalDuration = ph.length * slideDuration;
     v.hidden = false; v.scrollIntoView({ behavior: "smooth" });
     v.innerHTML = `<div class="vh"><h3>${esc(t.title)}</h3><button class="auth-btn alt" id="vc">Close</button></div>${vid ? `<video controls src="${vid}"></video>` : t.video_path ? missingPhoto("Video") : ""}
-      ${ph.length ? `<div class="car"><button id="pv" aria-label="Previous">‹</button><figure><img id="im" alt=""><span id="im-missing" class="photo-missing-file" hidden>Photo unavailable</span><figcaption id="cp"></figcaption></figure><button id="nx" aria-label="Next">›</button></div>
-      <div class="vh"><button class="auth-btn" id="pl">Play reel</button><button class="auth-btn alt" id="fs">Full screen</button><button class="auth-btn alt" id="mu">Music: on</button></div><h4 class="all-title">All ${ph.length} photo${ph.length === 1 ? "" : "s"} from this theme</h4><div class="thumbs theme-all">${ph.map((x, k) => `<figure><button type="button" class="thumb-btn" data-k="${k}" aria-label="View photo by ${esc(x.submitted_by)}">${urls[x.image_path] ? `<img src="${urls[x.image_path]}" alt="">` : missingPhoto(`Photo by ${x.submitted_by}`)}</button><figcaption>${esc(x.submitted_by)}</figcaption></figure>`).join("")}</div>` : "<p>No approved photos for this theme.</p>"}`;
-    const stop = () => { clearInterval(timer); timer = null; LUMusic.stop(); if ($("pl")) $("pl").textContent = "Play reel"; };
-    $("vc").onclick = () => { stop(); document.fullscreenElement && document.exitFullscreen(); v.hidden = true; };
-    if (!ph.length) return;
-    const go = d => {
-      i = (i + d + ph.length) % ph.length;
+      ${ph.length ? `<div class="reel-stage" id="reel-stage" hidden></div><p id="reel-message" role="status" class="reel-message"></p><div class="car"><button id="pv" aria-label="Previous">‹</button><figure><img id="im" alt=""><span id="im-missing" class="photo-missing-file" hidden>Photo unavailable</span><figcaption id="cp"></figcaption></figure><button id="nx" aria-label="Next">›</button></div>
+      <div class="vh"><button class="auth-btn" id="pl">Play reel</button><button class="auth-btn" id="export-reel">Export MP4</button><button class="auth-btn alt" id="fs">Full screen</button><button class="auth-btn alt" id="mu">Music: on</button></div><small class="reel-export-note">Creates an animated 720p MP4 in your browser. The first export downloads the video encoder (~30 MB); photos stay on this device.</small><h4 class="all-title">All ${ph.length} photo${ph.length === 1 ? "" : "s"} from this theme</h4><div class="thumbs theme-all">${ph.map((x, k) => `<figure><button type="button" class="thumb-btn" data-k="${k}" aria-label="View photo by ${esc(x.submitted_by)}">${urls[x.image_path] ? `<img src="${urls[x.image_path]}" alt="">` : missingPhoto(`Photo by ${x.submitted_by}`)}</button><figcaption>${esc(x.submitted_by)}</figcaption></figure>`).join("")}</div>` : "<p>No approved photos for this theme.</p>"}`;
+    if (!ph.length) {
+      $("vc").onclick = () => { document.fullscreenElement && document.exitFullscreen(); v.hidden = true; };
+      return;
+    }
+    const stage = $("reel-stage"), message = $("reel-message"), playButton = $("pl"), exportButton = $("export-reel");
+    stage.appendChild(canvas);
+    const loadImage = index => new Promise((resolve, reject) => {
+      const url = urls[ph[index]?.image_path];
+      if (!url) return reject(new Error(`Photo ${index + 1} could not be loaded.`));
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error(`Photo ${index + 1} could not be read for the reel. Refresh the gallery and try again.`));
+      image.src = url;
+    });
+    const prepareImages = async () => {
+      if (reelImages) return reelImages;
+      const images = [];
+      for (let start = 0; start < ph.length; start += 4) {
+        const batch = await Promise.all(Array.from({ length: Math.min(4, ph.length - start) }, (_, index) => loadImage(start + index)));
+        images.push(...batch);
+        message.textContent = `Preparing photos ${images.length} of ${ph.length}…`;
+      }
+      reelImages = images;
+      message.textContent = "";
+      return images;
+    };
+    const drawPhoto = (image, progress, alpha = 1, index = 0) => {
+      if (!image) return;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      const width = canvas.width, height = canvas.height;
+      const cover = Math.max(width / image.naturalWidth, height / image.naturalHeight) * 1.12;
+      const bgWidth = image.naturalWidth * cover, bgHeight = image.naturalHeight * cover;
+      ctx.filter = "blur(24px) brightness(.42)";
+      ctx.drawImage(image, (width - bgWidth) / 2, (height - bgHeight) / 2, bgWidth, bgHeight);
+      ctx.filter = "none";
+      const fit = Math.min(1100 / image.naturalWidth, 600 / image.naturalHeight) * (1.02 + progress * .035);
+      const imageWidth = image.naturalWidth * fit, imageHeight = image.naturalHeight * fit;
+      const drift = Math.sin(progress * Math.PI) * 22 * (index % 2 ? -1 : 1);
+      ctx.shadowColor = "rgba(0,0,0,.4)";
+      ctx.shadowBlur = 28;
+      ctx.drawImage(image, (width - imageWidth) / 2 + drift, (height - imageHeight) / 2, imageWidth, imageHeight);
+      ctx.restore();
+    };
+    const drawFrame = elapsed => {
+      const index = Math.min(ph.length - 1, Math.floor(elapsed / slideDuration));
+      const progress = (elapsed % slideDuration) / slideDuration;
+      const fade = index < ph.length - 1 ? Math.max(0, (progress - .72) / .28) : 0;
+      ctx.fillStyle = "#07152b";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      drawPhoto(reelImages[index], progress, 1, index);
+      if (fade > 0) drawPhoto(reelImages[index + 1], 0, Math.min(1, fade), index + 1);
+      const shade = ctx.createLinearGradient(0, 410, 0, 720);
+      shade.addColorStop(0, "rgba(0,0,0,0)");
+      shade.addColorStop(1, "rgba(0,12,34,.82)");
+      ctx.fillStyle = shade;
+      ctx.fillRect(0, 410, canvas.width, 310);
+      ctx.fillStyle = "#e1a730";
+      ctx.fillRect(72, 612, 54, 5);
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "600 24px 'Barlow Condensed', sans-serif";
+      ctx.fillText("LATTER UP  ·  PHOTO CHALLENGE", 72, 574);
+      ctx.font = "700 43px 'Barlow Semi Condensed', sans-serif";
+      const title = elapsed < 3000 ? t.title : `${ph[index].submitted_by}  ·  ${index + 1} / ${ph.length}`;
+      ctx.fillText(title.slice(0, 56), 72, 655, 1120);
+      ctx.fillStyle = "rgba(255,255,255,.82)";
+      ctx.font = "500 18px 'Barlow Condensed', sans-serif";
+      ctx.fillText(elapsed < 3000 ? "A collection of moments from our community" : t.title.slice(0, 90), 72, 694, 1120);
+      ctx.fillStyle = "#e1a730";
+      ctx.fillRect(0, 712, canvas.width * Math.min(1, elapsed / totalDuration), 8);
+      return index;
+    };
+    const stopPlayback = reset => {
+      if (playbackFrame) cancelAnimationFrame(playbackFrame);
+      playbackFrame = 0;
+      if (playbackRunning) playbackElapsed = performance.now() - playbackStartedAt;
+      playbackRunning = false;
+      LUMusic.stop();
+      if (reset) playbackElapsed = 0;
+      playButton.textContent = playbackElapsed ? "Resume reel" : "Play reel";
+    };
+    const showReelStage = () => {
+      stage.hidden = false;
+      v.querySelector(".car").hidden = true;
+      v.querySelector(".theme-all").hidden = true;
+    };
+    const showCarousel = () => {
+      stage.hidden = true;
+      v.querySelector(".car").hidden = false;
+      v.querySelector(".theme-all").hidden = false;
+    };
+    const startPlayback = async () => {
+      if (playbackRunning) return stopPlayback(false);
+      try {
+        await prepareImages();
+        showReelStage();
+        if (playbackElapsed >= totalDuration) playbackElapsed = 0;
+        if (LUMusic.enabled) await LUMusic.start();
+        playbackStartedAt = performance.now() - playbackElapsed;
+        playbackRunning = true;
+        playButton.textContent = "Pause reel";
+        const animate = now => {
+          if (!playbackRunning) return;
+          playbackElapsed = now - playbackStartedAt;
+          drawFrame(playbackElapsed);
+          if (playbackElapsed >= totalDuration) {
+            playbackRunning = false;
+            playbackFrame = 0;
+            playbackElapsed = 0;
+            LUMusic.stop();
+            playButton.textContent = "Play reel";
+            return;
+          }
+          playbackFrame = requestAnimationFrame(animate);
+        };
+        playbackFrame = requestAnimationFrame(animate);
+      } catch (error) {
+        message.textContent = `Reel could not start: ${error.message || error}`;
+      }
+    };
+    const loadFfmpegScript = () => new Promise((resolve, reject) => {
+      if (window.FFmpegWASM?.FFmpeg) return resolve();
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js";
+      script.onload = () => window.FFmpegWASM?.FFmpeg ? resolve() : reject(new Error("The video encoder did not load correctly."));
+      script.onerror = () => reject(new Error("The video encoder could not be downloaded. Check your connection and try again."));
+      document.head.appendChild(script);
+    });
+    const fetchBlobUrl = async (url, type) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Could not download video encoder component (HTTP ${response.status}).`);
+      return URL.createObjectURL(new Blob([await response.arrayBuffer()], { type }));
+    };
+    const transcodeToMp4 = async webm => {
+      await loadFfmpegScript();
+      const { FFmpeg } = window.FFmpegWASM;
+      const ffmpeg = new FFmpeg();
+      const base = "https://cdn.jsdelivr.net/npm";
+      let workerURL, coreURL, wasmURL;
+      try {
+        const workerBase = `${base}/@ffmpeg/ffmpeg@0.12.10/dist/esm/`;
+        const workerResponse = await fetch(`${workerBase}worker.js`);
+        if (!workerResponse.ok) throw new Error(`Could not download video encoder worker (HTTP ${workerResponse.status}).`);
+        const workerSource = (await workerResponse.text())
+          .replaceAll('"./const.js"', JSON.stringify(`${workerBase}const.js`))
+          .replaceAll('"./errors.js"', JSON.stringify(`${workerBase}errors.js`));
+        workerURL = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
+        coreURL = await fetchBlobUrl(`${base}/@ffmpeg/core@0.12.10/dist/esm/ffmpeg-core.js`, "text/javascript");
+        wasmURL = await fetchBlobUrl(`${base}/@ffmpeg/core@0.12.10/dist/esm/ffmpeg-core.wasm`, "application/wasm");
+        message.textContent = "Loading the MP4 encoder…";
+        await ffmpeg.load({ classWorkerURL: workerURL, coreURL, wasmURL });
+        message.textContent = "Converting the reel to MP4…";
+        await ffmpeg.writeFile("reel.webm", new Uint8Array(await webm.arrayBuffer()));
+        const exitCode = await ffmpeg.exec(["-i", "reel.webm", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "reel.mp4"]);
+        if (exitCode !== 0) throw new Error(`FFmpeg could not convert the reel (exit code ${exitCode}).`);
+        const output = await ffmpeg.readFile("reel.mp4");
+        return new Blob([output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength)], { type: "video/mp4" });
+      } finally {
+        ffmpeg.terminate();
+        [workerURL, coreURL, wasmURL].filter(Boolean).forEach(URL.revokeObjectURL);
+      }
+    };
+    const exportMp4 = async () => {
+      if (exporting) return;
+      exporting = true;
+      let recordingFrame = 0, captureTracks = [];
+      exportButton.disabled = true;
+      $("vc").disabled = true;
+      message.textContent = "Preparing the reel…";
+      stopPlayback(true);
+      try {
+        await prepareImages();
+        showReelStage();
+        if (!canvas.captureStream || !window.MediaRecorder) throw new Error("This browser cannot record the reel. Try the latest Chrome or Edge.");
+        const audio = await LUMusic.createRecordingDestination();
+        LUMusic.setRecordingDestination(audio);
+        if (LUMusic.enabled) await LUMusic.start();
+        const videoStream = canvas.captureStream(30);
+        captureTracks = [...videoStream.getTracks(), ...audio.stream.getTracks()];
+        const stream = new MediaStream(captureTracks);
+        const mimeType = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
+          .find(type => MediaRecorder.isTypeSupported(type));
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: 6000000 } : undefined);
+        const chunks = [];
+        const recorded = new Promise((resolve, reject) => {
+          recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+          recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
+          recorder.onerror = event => reject(event.error || new Error("The browser could not record the reel."));
+        });
+        recorder.start(1000);
+        const start = performance.now();
+        await new Promise(resolve => {
+          const animate = now => {
+            const elapsed = now - start;
+            drawFrame(elapsed);
+            if (elapsed >= totalDuration) {
+              recorder.stop();
+              recordingFrame = 0;
+              resolve();
+            } else recordingFrame = requestAnimationFrame(animate);
+          };
+          recordingFrame = requestAnimationFrame(animate);
+        });
+        const webm = await recorded;
+        LUMusic.stop();
+        message.textContent = "Converting to MP4 in your browser…";
+        const mp4 = await transcodeToMp4(webm);
+        const objectUrl = URL.createObjectURL(mp4), link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = `${t.title.normalize("NFKD").replace(/[\\/:*?\"<>|\u0000-\u001f]/g, "-").replace(/\s+/g, " ").trim().slice(0, 80) || "photo-challenge"}-reel.mp4`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+        message.textContent = "Your MP4 reel is ready and downloading.";
+      } catch (error) {
+        message.textContent = `MP4 export failed: ${error.message || error}`;
+      } finally {
+        if (recordingFrame) cancelAnimationFrame(recordingFrame);
+        captureTracks.forEach(track => track.stop());
+        LUMusic.stop();
+        LUMusic.setRecordingDestination(null);
+        $("vc").disabled = false;
+        exportButton.disabled = false;
+        exporting = false;
+      }
+    };
+    const go = direction => {
+      i = (i + direction + ph.length) % ph.length;
       const url = urls[ph[i].image_path];
       $("im").hidden = !url;
       $("im-missing").hidden = !!url;
@@ -212,13 +445,41 @@
       else $("im").removeAttribute("src");
       $("cp").textContent = `${ph[i].submitted_by} · ${i + 1}/${ph.length}`;
     };
+    const close = () => {
+      stopPlayback(true);
+      if (reelImages) reelImages.forEach(image => { image.onload = null; image.onerror = null; image.src = ""; });
+      document.fullscreenElement && document.exitFullscreen();
+      v.hidden = true;
+    };
+    $("vc").onclick = close;
     go(0);
-    $("mu").onclick = () => { LUMusic.enabled = !LUMusic.enabled; $("mu").textContent = "Music: " + (LUMusic.enabled ? "on" : "off"); if (timer) LUMusic.enabled ? LUMusic.start() : LUMusic.stop(); };
-    v.querySelectorAll("[data-k]").forEach(b => b.onclick = () => { stop(); i = +b.dataset.k; go(0); v.querySelector(".car").scrollIntoView({ behavior: "smooth", block: "center" }); });
-    $("pv").onclick = () => { stop(); go(-1); }; $("nx").onclick = () => { stop(); go(1); };
-    $("pl").onclick = () => { if (timer) return stop(); LUMusic.start(); timer = setInterval(() => go(1), LUMusic.interval); $("pl").textContent = "Pause reel"; };
+    $("mu").onclick = async () => {
+      LUMusic.enabled = !LUMusic.enabled;
+      $("mu").textContent = "Music: " + (LUMusic.enabled ? "on" : "off");
+      try {
+        if (playbackRunning) {
+          if (LUMusic.enabled) await LUMusic.start();
+          else LUMusic.stop();
+        }
+      } catch (error) {
+        message.textContent = `Music could not start: ${error.message || error}`;
+      }
+    };
+    v.querySelectorAll("[data-k]").forEach(button => button.onclick = () => {
+      stopPlayback(true);
+      showCarousel();
+      i = +button.dataset.k;
+      go(0);
+      v.querySelector(".car").scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    $("pv").onclick = () => { stopPlayback(true); showCarousel(); go(-1); };
+    $("nx").onclick = () => { stopPlayback(true); showCarousel(); go(1); };
+    playButton.onclick = startPlayback;
+    exportButton.onclick = exportMp4;
     $("fs").onclick = () => v.requestFullscreen?.();
-    v.onkeydown = e => { if (e.key === "ArrowRight") $("nx").click(); if (e.key === "ArrowLeft") $("pv").click(); }; v.tabIndex = 0; v.focus();
+    v.onkeydown = event => { if (event.key === "ArrowRight") $("nx").click(); if (event.key === "ArrowLeft") $("pv").click(); };
+    v.tabIndex = 0;
+    v.focus();
   }
   renderCurrent();
 })();

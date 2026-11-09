@@ -22,7 +22,8 @@ function doPost(e) {
     if (!secret || d.secret !== secret) return reply({ ok: false, error: "bad secret" });
     const to = (d.to || []).map(String).filter(x => x.toLowerCase().endsWith(ALLOWED_DOMAIN));
     if (!to.length) return reply({ ok: false, error: "no valid recipients" });
-    MailApp.sendEmail({ to: to.join(","), subject: String(d.subject || "Latter UP").slice(0, 200), body: String(d.text || ""), name: "Latter UP Portal" });
+    const bcc = to.filter(address => address.toLowerCase() !== "studentleadership@latterup.org");
+    MailApp.sendEmail({ to: "studentleadership@latterup.org", bcc: bcc.join(","), subject: String(d.subject || "Latter UP").slice(0, 200), body: String(d.text || ""), name: "Latter UP Portal" });
     return reply({ ok: true });
   } catch (err) {
     return reply({ ok: false, error: String(err) });

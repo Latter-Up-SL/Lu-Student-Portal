@@ -3,6 +3,9 @@
   const C = window.LU_CONFIG; window.LUsb = window.LUsb || supabase.createClient(C.url, C.key);
   const sb = window.LUsb, host = document.getElementById("site-header"); if (!host) return;
   const page = location.pathname.split("/").pop() || "index.html";
+  const scheduleSection = document.getElementById("schedule-embed");
+  const protectedFrame = document.querySelector(".schedule-page-frame, .raffle-page-frame, #schedule-embed iframe");
+  if (scheduleSection) scheduleSection.classList.add("auth-required-hidden");
   const links = [["Home", "index.html"], ["Announcements", "announcements.html"], ["Videos", "videos.html"], ["Photo Challenge", "photos.html"]];
   const mark = '<svg viewBox="0 0 64 64" role="img" aria-label="Latter UP home"><defs><linearGradient id="luNavy" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#123C72"/><stop offset="1" stop-color="#001F55"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="18" fill="url(#luNavy)"/><circle cx="45" cy="17" r="5" fill="#E1A730"/><path d="M13 42 25 21l9 15 6-9 12 19H13Z" fill="#FCFBFA" opacity=".96"/><path d="M13 46h39" stroke="#E1A730" stroke-width="4" stroke-linecap="round"/><path d="m25 21 4 7-4 2-4-2Z" fill="#E1A730"/></svg>';
   const el = document.createElement("header"); el.className = "site-header";
@@ -49,23 +52,20 @@
     return;
   }
   const { data: { session } } = await sb.auth.getSession();
-  const user = session?.user;
-  const hasGoogleIdentity = user?.app_metadata?.provider === "google"
-    || (Array.isArray(user?.app_metadata?.providers) && user.app_metadata.providers.includes("google"))
-    || user?.identities?.some(identity => identity.provider === "google");
-  if (!hasGoogleIdentity
-      && String(user?.app_metadata?.must_change_password).toLowerCase() === "true"
-      && !["change-password.html", "login.html"].includes(page.toLowerCase())) {
-    location.replace("change-password.html?next=" + encodeURIComponent(page));
-    return;
-  }
   if (!session) {
+    if (["schedule.html", "raffle.html"].includes(page)) {
+      location.replace("login.html?next=" + encodeURIComponent(page));
+      return;
+    }
+    document.querySelector('footer a[href="schedule.html"]')?.remove();
     const previewOption = window.LU_LOCAL_HOST ? '<button id="preview-toggle" type="button">Use local preview</button>' : "";
     $("pf").innerHTML = `<button class="icon-btn avatar" id="pb" aria-label="Profile menu" aria-haspopup="true">?</button><div class="menu" id="pm"><div class="who"><b>Not signed in</b></div><a href="#" id="si">Sign in</a>${previewOption}<button id="th" class="theme-menu-toggle" type="button"></button></div>`;
     $("si").onclick = () => (location.href = "login.html?next=" + encodeURIComponent(page));
     paint(); wireProfileMenu();
   }
   else {
+    if (scheduleSection) scheduleSection.classList.remove("auth-required-hidden");
+    if (protectedFrame?.dataset.src) protectedFrame.src = protectedFrame.dataset.src;
     const scheduleLink = document.createElement("a");
     scheduleLink.href = "schedule.html";
     scheduleLink.textContent = "Your Schedule";
@@ -90,7 +90,7 @@
     }
     const previewOption = window.LU_LOCAL_HOST ? '<button id="preview-toggle" type="button">Use local preview</button>' : "";
     $("pf").innerHTML = `<button class="icon-btn avatar" id="pb" aria-label="Profile menu" aria-haspopup="true">${name[0].toUpperCase()}</button>
-      <div class="menu" id="pm"><div class="who"><b>${name.replace(/[<>&]/g, "")}</b><br>${u.email}</div><a href="change-password.html">Change password</a><a href="photos.html">My photos</a>${adm !== "student" ? '<a href="admin.html">' + (adm === "admin" ? "Admin" : "Student Leadership tools") + '</a>' : ""}<a href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=studentleadership%40latterup.org" target="_blank" rel="noopener noreferrer">Contact Student Leadership</a>${previewOption}<button id="th" class="theme-menu-toggle" type="button"></button><button id="so">Sign out</button></div>`;
+      <div class="menu" id="pm"><div class="who"><b>${name.replace(/[<>&]/g, "")}</b><br>${u.email}</div><a href="photos.html">My photos</a>${adm !== "student" ? '<a href="admin.html">' + (adm === "admin" ? "Admin" : "Student Leadership tools") + '</a>' : ""}<a href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=studentleadership%40latterup.org" target="_blank" rel="noopener noreferrer">Contact Student Leadership</a>${previewOption}<button id="th" class="theme-menu-toggle" type="button"></button><button id="so">Sign out</button></div>`;
     paint(); wireProfileMenu();
     $("so").onclick = async () => { await sb.auth.signOut(); location.href = "index.html"; };
   }

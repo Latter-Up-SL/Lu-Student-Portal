@@ -324,3 +324,9 @@
     gap: 20px;
   }
 }
+.adm .photo-export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.adm .photo-export-actions small { flex: 1 1 100%; }
+.adm .release-email-status { display: block; margin-top: 5px; font-size: .9rem; color: var(--slate); }
+.adm .content-email-template { margin: 16px 0; padding: 14px; border: var(--adm-border); border-radius: 12px; }
+.adm .content-email-template legend { padding: 0 6px; font-weight: 700; }
+.adm .content-release-email-settings { margin: 18px 0; }

@@ -20,15 +20,9 @@
 <script>
 const sb = window.LUsb || supabase.createClient(LU_CONFIG.url, LU_CONFIG.key), $ = id => document.getElementById(id);
 const requestedPage = new URLSearchParams(location.search).get("next");
-const nextPage = requestedPage && /^[a-z0-9-]+\.html$/i.test(requestedPage) && !["login.html", "change-password.html"].includes(requestedPage.toLowerCase())
+const nextPage = requestedPage && /^[a-z0-9-]+\.html$/i.test(requestedPage) && requestedPage.toLowerCase() !== "login.html"
   ? requestedPage
   : "index.html";
-const hasGoogleIdentity = user => user?.app_metadata?.provider === "google"
-  || (Array.isArray(user?.app_metadata?.providers) && user.app_metadata.providers.includes("google"))
-  || user?.identities?.some(identity => identity.provider === "google");
-const postSignInPage = user => !hasGoogleIdentity(user) && (user.app_metadata?.must_change_password || user.user_metadata?.must_change_password)
-  ? "change-password.html?next=" + encodeURIComponent(nextPage)
-  : nextPage;
 const err = (id, m) => { $(id).textContent = m; $(id).hidden = false; };
 const openedFromDisk = location.protocol === "file:";
 const oauthError = new URLSearchParams(location.search).get("error_description")
@@ -51,7 +45,7 @@ if (oauthError) err("e1", "Google sign-in couldn't be completed. Please try agai
     err("e1", "A saved sign-in couldn't be verified. Please try signing in again.");
     return;
   }
-  location.replace(postSignInPage(verified.user));
+  location.replace(nextPage);
 })();
 $("google").onclick = async () => {
   if (openedFromDisk) return;

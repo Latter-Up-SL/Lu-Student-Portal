@@ -15,9 +15,6 @@ const adminTabViews = new Map();
 let activeViewGeneration = 0;
 let activeViewLoadedAt = 0;
 const isCurrentView = generation => generation === activeViewGeneration;
-const hasGoogleIdentity = user => user?.app_metadata?.provider === "google"
-  || (Array.isArray(user?.app_metadata?.providers) && user.app_metadata.providers.includes("google"))
-  || user?.identities?.some(identity => identity.provider === "google");
 const rotationWeekStart = weekday => {
   const now = new Date();
   const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -82,14 +79,63 @@ const driveId = value => {
     return /^[\w-]{10,}$/.test(id || "") ? id : null;
   } catch { return null; }
 };
+const zipCrcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < table.length; n++) {
+    let c = n;
+    for (let bit = 0; bit < 8; bit++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+const zipCrc32 = bytes => {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = zipCrcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+};
+async function createPhotoZip(files) {
+  const encoder = new TextEncoder(), local = [], central = [];
+  let offset = 0;
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  if (files.length > 65535) throw new Error("This archive exceeds the ZIP file-count limit.");
+  for (const file of files) {
+    const name = encoder.encode(file.name), data = new Uint8Array(await file.blob.arrayBuffer());
+    if (data.length > 0xffffffff || offset + data.length > 0xffffffff) throw new Error("This archive exceeds the standard ZIP size limit.");
+    const crc = zipCrc32(data);
+    const header = new Uint8Array(30 + name.length), view = new DataView(header.buffer);
+    view.setUint32(0, 0x04034b50, true); view.setUint16(4, 20, true); view.setUint16(6, 0x0800, true);
+    view.setUint16(8, 0, true); view.setUint16(10, dosTime, true); view.setUint16(12, dosDate, true);
+    view.setUint32(14, crc, true); view.setUint32(18, data.length, true); view.setUint32(22, data.length, true);
+    view.setUint16(26, name.length, true); view.setUint16(28, 0, true); header.set(name, 30);
+    local.push(header, data);
+    const directory = new Uint8Array(46 + name.length), directoryView = new DataView(directory.buffer);
+    directoryView.setUint32(0, 0x02014b50, true); directoryView.setUint16(4, 0x0314, true);
+    directoryView.setUint16(6, 20, true); directoryView.setUint16(8, 0x0800, true);
+    directoryView.setUint16(10, 0, true); directoryView.setUint16(12, dosTime, true);
+    directoryView.setUint16(14, dosDate, true); directoryView.setUint32(16, crc, true);
+    directoryView.setUint32(20, data.length, true); directoryView.setUint32(24, data.length, true);
+    directoryView.setUint16(28, name.length, true); directoryView.setUint16(30, 0, true);
+    directoryView.setUint16(32, 0, true); directoryView.setUint16(34, 0, true);
+    directoryView.setUint16(36, 0, true); directoryView.setUint32(38, 0, true);
+    directoryView.setUint32(42, offset, true); directory.set(name, 46);
+    central.push(directory);
+    offset += header.length + data.length;
+  }
+  const centralSize = central.reduce((sum, entry) => sum + entry.length, 0);
+  if (offset + centralSize > 0xffffffff) throw new Error("This archive exceeds the standard ZIP size limit.");
+  const end = new Uint8Array(22), endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true); endView.setUint16(4, 0, true); endView.setUint16(6, 0, true);
+  endView.setUint16(8, files.length, true); endView.setUint16(10, files.length, true);
+  endView.setUint32(12, centralSize, true); endView.setUint32(16, offset, true); endView.setUint16(20, 0, true);
+  return new Blob([...local, ...central, end], { type: "application/zip" });
+}
+const archivePart = value => String(value || "photo").normalize("NFKD")
+  .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").replace(/\s+/g, " ").trim().slice(0, 80) || "photo";
 
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
-  if (!hasGoogleIdentity(session?.user)
-      && String(session?.user?.app_metadata?.must_change_password).toLowerCase() === "true") {
-    location.replace("change-password.html?next=" + encodeURIComponent("admin.html"));
-    return;
-  }
   if (!session) return app.innerHTML = '<p>Please sign in with your admin account.</p><button class="auth-btn" id="g">Sign in</button>',
     document.getElementById("g").onclick = () => (location.href = "login.html?next=" + encodeURIComponent(location.pathname.split("/").pop() || "index.html"));
   let role = (await sb.rpc("my_role")).data;
@@ -220,6 +266,17 @@ async function listUI(table, host, generation = activeViewGeneration) {
   const rows = data ?? [];
   const { data: { session } } = await sb.auth.getSession();
   if (!isCurrentView(generation)) return;
+  const contentType = { announcements: "announcement", videos: "video", themes: "theme" }[table];
+  let releaseEmails = new Map(), releaseEmailError = null;
+  if (ROLE === "admin" && contentType && rows.length) {
+    const result = await sb.from("content_email_deliveries")
+      .select("id,content_id,status,sent_at,last_error")
+      .eq("content_type", contentType)
+      .in("content_id", rows.map(item => item.id));
+    releaseEmailError = result.error;
+    releaseEmails = new Map((result.data || []).map(item => [item.content_id, item]));
+    if (!isCurrentView(generation)) return;
+  }
   let scheduleBlock = "";
   if (table === "themes" && ROLE === "admin") {
     const { data: st, error: settingsError } = await sb.from("settings").select("*").eq("id", 1).single();
@@ -236,9 +293,20 @@ async function listUI(table, host, generation = activeViewGeneration) {
   const listContent = `<button class="auth-btn" id="new">+ Add new</button><div id="list">` +
     rows.map(r => {
       const canManage = ROLE === "admin" || (table === "announcements" && ROLE === "leader" && r.created_by === session?.user?.id);
-      return `<div class="admin-edit-item"><div class="row"><span>${esc(r[t.title])} <small>${esc(r.date || (r.starts_at ? new Date(r.starts_at).toLocaleString() : ""))}</small>${r.publish_at && new Date(r.publish_at) > new Date() ? ` <span class="sched-badge">Scheduled for ${esc(new Date(r.publish_at).toLocaleString())}</span>` : ""}</span><span>${table === "themes" ? `<button class="auth-btn alt" data-ph="${r.id}">Photos</button> ` : ""}${canManage ? `<button class="auth-btn alt" data-e="${r.id}">Edit</button> <button class="auth-btn alt" data-d="${r.id}">Delete</button>` : ""}</span></div><div id="item-form-${r.id}" class="admin-inline-edit"></div></div>`;
+      const emailDelivery = releaseEmails.get(r.id);
+      const emailStatus = r.email_opt_in
+        ? emailDelivery?.status === "sent"
+          ? `Release email sent ${emailDelivery.sent_at ? esc(new Date(emailDelivery.sent_at).toLocaleString()) : ""}`
+          : ["failed", "cancelled"].includes(emailDelivery?.status)
+            ? `Release email ${esc(emailDelivery.status)}${emailDelivery.last_error ? `: ${esc(emailDelivery.last_error)}` : ""}${ROLE === "admin" ? ` <button class="auth-btn alt" data-email-retry="${emailDelivery.id}">Retry email</button>` : ""}`
+            : emailDelivery
+              ? `Release email ${esc(emailDelivery.status)}`
+              : `Email ${r.publish_at && new Date(r.publish_at) > new Date() ? "scheduled for publication" : table === "themes" && new Date(r.starts_at) > new Date() ? "scheduled for challenge start" : "queued for the next check"}`
+        : "";
+      return `<div class="admin-edit-item"><div class="row"><span>${esc(r[t.title])} <small>${esc(r.date || (r.starts_at ? new Date(r.starts_at).toLocaleString() : ""))}</small>${r.publish_at && new Date(r.publish_at) > new Date() ? ` <span class="sched-badge">Scheduled for ${esc(new Date(r.publish_at).toLocaleString())}</span>` : ""}${emailStatus ? ` <span class="release-email-status">${emailStatus}</span>` : ""}</span><span>${table === "themes" ? `<button class="auth-btn alt" data-ph="${r.id}">Photos</button> ` : ""}${canManage ? `<button class="auth-btn alt" data-e="${r.id}">Edit</button> <button class="auth-btn alt" data-d="${r.id}">Delete</button>` : ""}</span></div><div id="item-form-${r.id}" class="admin-inline-edit"></div></div>`;
     }).join("") + "</div><div id=\"form\"></div>";
   host.innerHTML = (host === app ? tabs() : "") + (listError ? `<p class="auth-error">Could not load ${esc(t.label.toLowerCase())}: ${esc(listError.message)}</p>` : "") +
+    (releaseEmailError ? `<p class="auth-error">Release email status could not be loaded: ${esc(releaseEmailError.message)}. Run update-27-content-email-and-password-removal.sql in Supabase.</p>` : "") +
     (table === "themes"
       ? `<div class="photo-admin-layout">
           <section class="photo-approval-panel" aria-label="Photo approval"><div id="photos-section"></div></section>
@@ -270,6 +338,18 @@ async function listUI(table, host, generation = activeViewGeneration) {
     }
     if (cur === parentTab) show();
   });
+  host.querySelectorAll("[data-email-retry]").forEach(button => button.onclick = async () => {
+    button.disabled = true;
+    const { data, error } = await sb.from("content_email_deliveries")
+      .update({ status: "pending", attempts: 0, request_id: null, next_attempt_at: new Date().toISOString(), last_error: null })
+      .eq("id", button.dataset.emailRetry).in("status", ["failed", "cancelled"]).select("id").maybeSingle();
+    if (error || !data) {
+      alert(`Could not retry the release email: ${error?.message || "the failed delivery was not updated"}`);
+      button.disabled = false;
+      return;
+    }
+    if (cur === parentTab) show();
+  });
 }
 
 async function form(row, target = document.getElementById("form")) {
@@ -282,15 +362,19 @@ async function form(row, target = document.getElementById("form")) {
     else if (data?.[0]) d = { starts_at: data[0].starts_at, ends_at: data[0].ends_at };
   }
   const el = target || document.getElementById("form");
-  el.innerHTML = `<form><h3>${row ? "Edit" : "New"} ${t.label}</h3>${suggestionError ? `<p class="auth-error">${esc(suggestionError)}</p>` : ""}` + t.f.map(([k, lab, type, acc]) => {
+  const fields = t.f.map(([k, lab, type, acc]) => {
     const v = d[k] ?? "";
     if (type === "textarea") return `<label>${lab}<textarea name="${k}" rows="4">${esc(v)}</textarea></label>`;
-    if (type === "file") return `<label>${lab}${v ? ` <small>Current file kept unless you choose a new one</small>` : ""}<input type="file" name="${k}" accept="${acc}"></label>`;
+    if (type === "file") return `<label>${lab}${v ? ` <small>Current file kept unless you choose a new one</small>` : ""}<input type="file" name="${k}" accept="${acc}"></label>${formTable === "announcements" && v ? `<label class="chk"><input type="checkbox" name="remove_${k}"> Remove current attachment</label>` : ""}`;
     if (type === "drive") return `<label>${lab}<input name="${k}" value="${esc(v)}" placeholder="Paste a Google Drive sharing link or file ID"><small class="drive-sharing-reminder"><strong>Before saving:</strong> In Google Drive, set the video's General access to “Anyone with the link” so students can watch it. Use either a YouTube link or a Google Drive link.</small></label>`;
     if (type === "datetime_opt") return `<label>${lab}<input type="datetime-local" name="${k}" value="${v ? loc(v) : ""}"><small>Students see it at this date and time. Blank = visible immediately.</small></label>`;
     if (type === "datetime") return `<label>${lab}<input type="datetime-local" name="${k}" value="${v ? loc(v) : ""}" required></label>`;
     return `<label>${lab}<input name="${k}" type="${type === "yt" ? "text" : type || "text"}" value="${esc(type === "date" && !v ? new Date().toISOString().slice(0, 10) : v)}" ${["title", "question", "answer"].includes(k) ? "required" : ""}></label>`;
-  }).join("") + '<div><button class="auth-btn" type="submit">Save</button> <button class="auth-btn alt" type="button" id="x">Cancel</button></div><small id="msg"></small></form>';
+  }).join("");
+  const releaseEmail = ["announcements", "videos", "themes"].includes(formTable)
+    ? `<label class="chk"><input type="checkbox" name="email_opt_in" ${d.email_opt_in ? "checked" : ""}> Email everyone when this ${formTable === "themes" ? "photo challenge starts" : "item goes live"}</label>`
+    : "";
+  el.innerHTML = `<form><h3>${row ? "Edit" : "New"} ${t.label}</h3>${suggestionError ? `<p class="auth-error">${esc(suggestionError)}</p>` : ""}${fields}${releaseEmail}<div><button class="auth-btn" type="submit">Save</button> <button class="auth-btn alt" type="button" id="x">Cancel</button></div><small id="msg"></small></form>`;
   el.querySelector("#x").onclick = () => (el.innerHTML = "");
   el.querySelector("form").onsubmit = async e => {
     e.preventDefault(); const msg = el.querySelector("#msg"); msg.textContent = "Saving…";
@@ -298,7 +382,14 @@ async function form(row, target = document.getElementById("form")) {
     for (const [k, , type] of t.f) {
       const inp = e.target.elements[k];
       if (type === "file") {
-        const f = inp.files[0]; if (!f) continue;
+        const f = inp.files[0];
+        if (!f) {
+          if (e.target.elements[`remove_${k}`]?.checked && row?.[k]) {
+            out[k] = null;
+            replaced.push(row[k]);
+          }
+          continue;
+        }
         let path = crypto.randomUUID() + "." + (f.name.split(".").pop() || "bin").toLowerCase();
         if (formTable === "announcements" && ROLE === "leader") {
           const { data: { session }, error: sessionError } = await sb.auth.getSession();
@@ -324,6 +415,9 @@ async function form(row, target = document.getElementById("form")) {
       }
       else if (type === "number") out[k] = Number(inp.value) || 0;
       else out[k] = inp.value.trim() || null;
+    }
+    if (["announcements", "videos", "themes"].includes(formTable)) {
+      out.email_opt_in = e.target.elements.email_opt_in.checked;
     }
     if (formTable === "videos") {
       const youtubeInput = e.target.elements.youtube_id.value.trim();
@@ -541,12 +635,16 @@ async function photosSection() {
   }
   const opts = id => th.map(t => `<option value="${t.id}" ${t.id === id ? "selected" : ""}>${esc(t.title)} (${new Date(t.starts_at).toLocaleDateString()})</option>`).join("");
   const grp = st => subs.filter(s => s.status === st), pend = grp("pending"), appr = grp("approved"), rej = grp("rejected");
+  const selectedTheme = th.find(theme => theme.id === sel);
+  const exportControls = ROLE === "admin"
+    ? `<div class="photo-export-actions"><button class="auth-btn alt" type="button" id="export-theme-photos" ${appr.length ? "" : "disabled"}>Download approved photos for this challenge (${appr.length})</button><button class="auth-btn alt" type="button" id="export-all-photos">Download all approved photos ever</button><small id="photo-export-message" role="status"></small></div>`
+    : "";
   const via = s => s.image_path.startsWith("public/") ? ' <span class="via-badge">public page</span>' : "";
   const img = s => urls[s.image_path]
     ? `<img src="${urls[s.image_path]}" alt="">`
     : '<div class="photo-missing-file" role="img" aria-label="Photo unavailable">Photo unavailable</div>';
   box.innerHTML = `<h3>Photo approval</h3><div class="photo-approval-content">
-  <label>Theme <select id="ph-ts">${opts(sel)}</select></label>
+  <label>Theme <select id="ph-ts">${opts(sel)}</select></label>${exportControls}
   <div class="needs-approval ${pend.length ? "has" : ""}"><div class="na-head"><h4>Needs approval</h4><span class="na-count">${pend.length}</span></div>
     ${pend.length ? `<div class="thumbs">${pend.map(s => `<figure>${img(s)}<figcaption><b>${esc(s.submitted_by)}</b>${via(s)}<span><button class="auth-btn" data-s="approved" data-id="${s.id}">Approve</button> <button class="auth-btn alt" data-s="rejected" data-id="${s.id}">Reject</button></span></figcaption></figure>`).join("")}</div>` : "<p><small>Nothing waiting, all caught up</small></p>"}</div>
   <div class="approved-block"><div class="na-head"><h4>Approved</h4><span class="na-count ok">${appr.length}</span></div>
@@ -559,6 +657,61 @@ async function photosSection() {
   <label>Photos<input type="file" name="f" accept="image/*" multiple required></label>
   <div><button class="auth-btn" type="submit">Import as approved</button></div><small id="ph-msg"></small></form>`;
   box.querySelector("#ph-ts").onchange = e => { sel = e.target.value; photosSection(); };
+  if (ROLE === "admin") {
+    const exportMessage = box.querySelector("#photo-export-message");
+    const exportZip = async (allThemes, button) => {
+      button.disabled = true;
+      exportMessage.textContent = "Preparing approved photos…";
+      try {
+        let records = allThemes ? [] : appr;
+        if (allThemes) {
+          for (let offset = 0; ; offset += 1000) {
+            const { data, error } = await sb.from("submissions").select("id,theme_id,submitted_by,image_path")
+              .eq("status", "approved").order("created_at").range(offset, offset + 999);
+            if (error) throw error;
+            records.push(...(data || []));
+            if (!data || data.length < 1000) break;
+          }
+        }
+        if (!records.length) {
+          exportMessage.textContent = "There are no approved photos to export.";
+          return;
+        }
+        const themeById = new Map(th.map(theme => [theme.id, theme.title]));
+        const files = [];
+        for (let start = 0; start < records.length; start += 4) {
+          const batch = records.slice(start, start + 4);
+          const downloaded = await Promise.all(batch.map(async record => {
+            const { data, error } = await sb.storage.from("photos").download(record.image_path);
+            if (error || !data) throw new Error(`${record.submitted_by}: ${error?.message || "file unavailable"}`);
+            const extension = record.image_path.match(/\.(jpe?g|png|webp|gif)$/i)?.[1]?.toLowerCase() || "jpg";
+            const themeName = archivePart(themeById.get(record.theme_id) || "Photo Challenge");
+            const folder = allThemes ? `${themeName}/` : "";
+            const number = String(start + batch.indexOf(record) + 1).padStart(3, "0");
+            const name = archivePart(record.submitted_by);
+            return { name: `${folder}${number} - ${name} - ${record.id}.${extension}`, blob: data };
+          }));
+          files.push(...downloaded);
+          exportMessage.textContent = `Downloaded ${files.length} of ${records.length} photos…`;
+        }
+        const archive = await createPhotoZip(files);
+        const objectUrl = URL.createObjectURL(archive), link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = allThemes ? "latter-up-all-approved-photos.zip" : `${archivePart(selectedTheme?.title)}-approved-photos.zip`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+        exportMessage.textContent = `Exported ${files.length} approved photos.`;
+      } catch (error) {
+        exportMessage.textContent = `Export failed: ${error.message || error}`;
+      } finally {
+        button.disabled = false;
+      }
+    };
+    box.querySelector("#export-theme-photos").onclick = event => exportZip(false, event.currentTarget);
+    box.querySelector("#export-all-photos").onclick = event => exportZip(true, event.currentTarget);
+  }
   box.querySelectorAll("[data-s]").forEach(b => b.onclick = async () => {
     const { data, error } = await sb.from("submissions").update({ status: b.dataset.s }).eq("id", b.dataset.id).select("id").maybeSingle();
     if (error || !data) return alert("Could not update photo status: " + (error?.message || "no submission was updated"));
@@ -1111,6 +1264,20 @@ async function alertsUI(generation = activeViewGeneration) {
   const roleTemplatesById = new Map((roleTemplatesResult.data || []).map(template => [template.role_id, template]));
   const defaultSubject = "{{photo_count}} waiting for approval";
   const defaultBody = "{{photo_count}} waiting for approval:\n\n{{photo_list}}\n\nReview them here: {{review_url}}";
+  const releaseEmailDefaults = {
+    announcement: {
+      subject: "New announcement: {{title}}",
+      body: "A new announcement is available: {{title}}\n\n{{description}}\n\nRead it here: {{url}}",
+    },
+    video: {
+      subject: "New video: {{title}}",
+      body: "A new video is available: {{title}}\n\n{{description}}\n\nWatch it here: {{url}}",
+    },
+    theme: {
+      subject: "New Photo Challenge: {{title}}",
+      body: "A new Photo Challenge starts {{start_date}}: {{title}}\n\n{{description}}\n\nJoin the challenge: {{url}}",
+    },
+  };
   const defaultRoleSubject = "{{role_name}} — your Student Leadership assignment";
   const defaultRoleBody = "Hi {{member_name}},\n\nYou are assigned to {{role_name}} for the week of {{week_start}}.\n\nOur next meeting is on {{meeting_date}}.\n\nThank you for serving!";
   const defaultFollowupSubject = "Reminder: {{role_name}} this week";
@@ -1133,6 +1300,21 @@ async function alertsUI(generation = activeViewGeneration) {
       <small>Available placeholders: <code>{{photo_count}}</code> (for example, “2 new photos”), <code>{{count}}</code> (number only), <code>{{photo_list}}</code> (names and themes), and <code>{{review_url}}</code>.</small>
     </label>
     <button class="auth-btn alt" type="button" id="al-template-defaults">Restore default message</button>
+    <details class="photo-email-settings content-release-email-settings">
+      <summary><h3>Emails for new announcements, videos, and photo challenges</h3></summary>
+      <p><small>Check “Email everyone” when creating or editing content to queue its email for the time it goes live. Messages go to confirmed @latterup.org accounts. Scheduled items send when published. Email alerts must be enabled and the Apps Script sender configured above.</small></p>
+      ${["announcement", "video", "theme"].map(kind => {
+        const label = kind === "theme" ? "Photo Challenge" : kind[0].toUpperCase() + kind.slice(1);
+        const subject = c?.[`${kind}_email_subject`] || releaseEmailDefaults[kind].subject;
+        const body = c?.[`${kind}_email_body`] || releaseEmailDefaults[kind].body;
+        return `<fieldset class="content-email-template" data-content-email="${kind}"><legend>${label}</legend>
+          <label>Email subject<input name="${kind}_email_subject" maxlength="200" value="${esc(subject)}" required></label>
+          <label>Email message<textarea name="${kind}_email_body" rows="5" maxlength="10000" required>${esc(body)}</textarea></label>
+        </fieldset>`;
+      }).join("")}
+      <p><small>Use these placeholders: <code>{{title}}</code>, <code>{{description}}</code>, <code>{{date}}</code>, <code>{{url}}</code>, and <code>{{type}}</code>. Photo Challenge emails also support <code>{{start_date}}</code> and <code>{{end_date}}</code>. Write plain-text messages and separate paragraphs with blank lines.</small></p>
+      <button class="auth-btn alt" type="button" id="content-email-defaults">Restore release email defaults</button>
+    </details>
     <label>Google Apps Script web app URL<input name="url" value="${esc(c?.webhook_url || "")}" placeholder="https://script.google.com/macros/s/…/exec"></label>
     <label>Secret phrase <small>Must match the SECRET you set in the script</small><input name="secret" type="password" value="${esc(c?.secret || "")}" autocomplete="off"></label>
     <label>Your site address <small>Used for the link inside the email</small><input name="site" value="${esc(c?.site_url || location.origin)}"></label>
@@ -1223,22 +1405,49 @@ async function alertsUI(generation = activeViewGeneration) {
       msg.textContent = `Unknown placeholder {{${invalidPlaceholder}}}. Use {{photo_count}}, {{count}}, {{photo_list}}, or {{review_url}}.`;
       return false;
     }
+    const releaseTemplates = {};
+    for (const [kind, label] of [["announcement", "announcement"], ["video", "video"], ["theme", "Photo Challenge"]]) {
+      const releaseSubject = f[`${kind}_email_subject`].value.trim();
+      const releaseBody = f[`${kind}_email_body`].value.trim();
+      const supported = kind === "theme"
+        ? ["title", "description", "date", "url", "type", "start_date", "end_date"]
+        : ["title", "description", "date", "url", "type"];
+      const unknown = [...releaseSubject.matchAll(/\{\{([^}]+)\}\}/g), ...releaseBody.matchAll(/\{\{([^}]+)\}\}/g)]
+        .map(match => match[1]).find(name => !supported.includes(name));
+      if (!releaseSubject || releaseSubject.length > 200 || !releaseBody || releaseBody.length > 10000) {
+        msg.textContent = `Enter a ${label} email subject (up to 200 characters) and message (up to 10,000 characters).`;
+        return false;
+      }
+      if (unknown) {
+        msg.textContent = `Unknown ${label} email placeholder {{${unknown}}}.`;
+        return false;
+      }
+      releaseTemplates[`${kind}_email_subject`] = releaseSubject;
+      releaseTemplates[`${kind}_email_body`] = releaseBody;
+    }
     const { data: saved, error } = await sb.from("notify_config").update({
       enabled: f.enabled.checked,
       photo_alert_audience: f.photo_alert_audience.value,
       photo_email_subject: subject,
       photo_email_body: body,
+      ...releaseTemplates,
       webhook_url: f.url.value.trim(),
       secret: f.secret.value,
       site_url: f.site.value.trim().replace(/\/$/, ""),
     }).eq("id", 1).select("id").maybeSingle();
-    if (error) msg.textContent = `Error: ${error.message}${error.message.includes("photo_alert_audience") ? " Run update-12-leadership-role-overrides-and-photo-alerts.sql in Supabase." : ""}`;
+    if (error) msg.textContent = `Error: ${error.message}${/photo_email_subject|photo_email_body/i.test(error.message) ? " Run update-16-photo-email-templates.sql in Supabase." : /announcement_email_|video_email_|theme_email_|email_opt_in/i.test(error.message) ? " Run update-27-content-email-and-password-removal.sql in Supabase." : error.message.includes("photo_alert_audience") ? " Run update-12-leadership-role-overrides-and-photo-alerts.sql in Supabase." : ""}`;
     else if (!saved) msg.textContent = "No email alert settings were saved.";
     return !error && !!saved;
   };
   document.getElementById("al-template-defaults").onclick = () => {
     f.photo_email_subject.value = defaultSubject;
     f.photo_email_body.value = defaultBody;
+  };
+  document.getElementById("content-email-defaults").onclick = () => {
+    for (const [kind, defaults] of Object.entries(releaseEmailDefaults)) {
+      f[`${kind}_email_subject`].value = defaults.subject;
+      f[`${kind}_email_body`].value = defaults.body;
+    }
   };
   const roleEmailForm = document.getElementById("role-email-form");
   const reminderButton = document.getElementById("send-role-reminder");
@@ -1497,7 +1706,6 @@ async function studentsUI(notice = "", generation = activeViewGeneration) {
         email: member.email,
         full_name: member.display_name || "",
         last_sign_in_at: null,
-        must_change_password: false,
         admin_role: false,
         leader_role: true,
         prelogin: true,
@@ -1529,7 +1737,7 @@ async function studentsUI(notice = "", generation = activeViewGeneration) {
       const email = s.email || "";
       const canBeLeader = email.toLowerCase().endsWith("@latterup.org");
       return `<div class="row student-admin-row"><span>${s.full_name ? "<b>" + esc(s.full_name) + "</b> · " : ""}${esc(email)}
-        ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.prelogin ? ' <span class="sched-badge">Student Leadership · not signed in yet</span>' : ""}${s.must_change_password ? ' <span class="sched-badge">Hasn\'t chosen a password yet</span>' : ""}</span>
+        ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.prelogin ? ' <span class="sched-badge">Student Leadership · not signed in yet</span>' : ""}</span>
         <label class="chk student-leader-toggle" title="${canBeLeader ? "Add or remove Student Leadership access" : "Student Leadership requires an @latterup.org account"}">
           <input type="checkbox" data-leader-toggle="${esc(email)}" ${s.leader_role ? "checked" : ""} ${loadError || !canBeLeader ? "disabled" : ""}> Student Leadership
         </label>

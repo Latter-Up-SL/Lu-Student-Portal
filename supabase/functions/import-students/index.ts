@@ -25,9 +25,6 @@ Deno.serve(async (req) => {
     const { data: { user }, error: userError } = await admin.auth.getUser(token);
     if (userError) return json({ error: "Sign-in could not be verified." }, 401);
     if (!user?.email) return json({ error: "Not signed in." }, 401);
-    if (String(user.app_metadata?.must_change_password).toLowerCase() === "true") {
-      return json({ error: "Change your password before using admin tools." }, 403);
-    }
     const { data: rows, error: adminLookupError } = await admin.from("admins").select("email");
     if (adminLookupError) return json({ error: "Could not verify administrator access." }, 500);
     if (!rows?.some((row) => row.email.trim().toLowerCase() === user.email.trim().toLowerCase())) {
