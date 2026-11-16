@@ -1034,8 +1034,8 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .leadership-chart { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr)); justify-items:stretch; align-items:stretch; gap:.8rem; width:100%; min-width:0; }
 .leadership-chart-section { width:100%; min-width:0; }
 .leadership-role-card { position:relative; display:flex; width:100%; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:.65rem; min-height:140px; padding:1rem; overflow:hidden; border:1px solid var(--stone-line); border-radius:15px; background:linear-gradient(135deg,var(--surface),color-mix(in srgb,var(--tint) 48%,var(--surface))); text-align:center; }
-.leadership-role-card.is-current-user { border-color:#e1a730; background:#fff1b8; }
-.leadership-role-card.is-current-user:hover,.leadership-role-card.is-current-user:focus-within { border-color:#8ec9e8; background:#dff2ff; }
+.leadership-role-card.is-highlighted-role { border-color:#e1a730; background:#fff1b8; }
+.leadership-role-card.is-highlighted-role:hover,.leadership-role-card.is-highlighted-role:focus-within { border-color:#8ec9e8; background:#dff2ff; }
 .leadership-role-card-trigger { display:flex; width:100%; flex-direction:column; align-items:center; gap:.65rem; padding:0; border:0; background:transparent; color:inherit; font:inherit; text-align:center; cursor:pointer; }
 .leadership-role-card-trigger:focus-visible { outline:3px solid #4388b5; outline-offset:4px; border-radius:8px; }
 .leadership-role-number { display:grid; width:46px; height:46px; flex:none; place-items:center; border-radius:14px; background:var(--gold); color:var(--navy); font-size:.9rem; font-weight:800; }
@@ -1087,6 +1087,9 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .role-description-preview-label { color:var(--stone); font-size:.8rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; }
 .role-description-preview { min-height:3rem; padding:.85rem 1rem; border:1px solid var(--stone-line); border-radius:10px; background:var(--tint); color:var(--navy); line-height:1.6; overflow-wrap:anywhere; }
 .role-description-preview:empty { display:none; }
+.role-box-color-setting { display:grid; gap:.5rem; margin:1rem 0 1.5rem; padding:1rem; border:1px solid var(--stone-line); border-radius:12px; background:var(--tint); }
+.role-box-color-setting label { display:flex; align-items:center; gap:.55rem; }
+.role-box-color-setting small { color:var(--stone); line-height:1.5; }
 .leadership-role-admin-row { display:grid; grid-template-columns:minmax(180px,1fr) 120px auto minmax(100px,auto); align-items:end; gap:.75rem; padding:.75rem 0; border-bottom:1px solid var(--stone-line); }
 .leadership-role-admin-row label { display:grid; gap:.35rem; color:var(--navy); font-size:.86rem; font-weight:700; }
 .leadership-role-admin-row input { min-width:0; padding:.55rem; border:1px solid var(--stone-line); border-radius:8px; }

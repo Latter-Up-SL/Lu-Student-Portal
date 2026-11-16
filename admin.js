@@ -811,14 +811,22 @@ function roleDescriptionHtml(value) {
 }
 
 async function leadershipRoleDescriptionsUI(generation = activeViewGeneration) {
-  const { data: roles, error } = await sb.from("leadership_chart_roles")
-    .select("id,name,description").order("sort_order").order("name");
+  const [rolesResult, settingsResult] = await Promise.all([
+    sb.from("leadership_chart_roles").select("id,name,description").order("sort_order").order("name"),
+    sb.from("leadership_hub_settings").select("role_box_colors_enabled").eq("id", 1).single(),
+  ]);
   if (!isCurrentView(generation)) return;
+  const roles = rolesResult.data;
+  const error = rolesResult.error || settingsResult.error;
   app.innerHTML = tabs() + `<section class="portal-admin-section">
     <h2>SL Role Descriptions</h2>
     <p>Write the role details Student Leadership members see when they select their own assignment. Select text and use the toolbar to add bold or underline formatting.</p>
+    <div class="role-box-color-setting">
+      <label class="chk"><input id="role-box-colors-enabled" type="checkbox" ${settingsResult.data?.role_box_colors_enabled !== false ? "checked" : ""}> Change role box colors</label>
+      <small id="role-box-colors-message">When enabled, role holders see their own assignment highlighted. Admins can always open any role tile; an admin's own assignment stays highlighted even when this is off.</small>
+    </div>
     ${error
-      ? `<p class="auth-error">Role descriptions could not load: ${esc(error.message)}. Run supabase/update-28-leadership-role-descriptions.sql in Supabase SQL Editor.</p>`
+      ? `<p class="auth-error">Role descriptions or color settings could not load: ${esc(error.message)}. Run supabase/update-28-leadership-role-descriptions.sql and supabase/update-29-leadership-role-box-colors.sql in Supabase SQL Editor.</p>`
       : roles.length
         ? roles.map(role => `<form class="leadership-role-description-editor" data-role-description="${esc(role.id)}">
           <h3>${esc(role.name)}</h3>
@@ -834,6 +842,23 @@ async function leadershipRoleDescriptionsUI(generation = activeViewGeneration) {
         : "<p>No Student Leadership roles have been added yet.</p>"}
   </section>`;
   wire();
+  const colorsToggle = document.getElementById("role-box-colors-enabled");
+  const colorsMessage = document.getElementById("role-box-colors-message");
+  colorsToggle.onchange = async () => {
+    const enabled = colorsToggle.checked;
+    colorsToggle.disabled = true;
+    colorsMessage.textContent = "Saving…";
+    const { error: saveError } = await sb.from("leadership_hub_settings")
+      .update({ role_box_colors_enabled: enabled }).eq("id", 1);
+    if (saveError) {
+      colorsToggle.checked = !enabled;
+      colorsMessage.textContent = `Could not save this setting: ${saveError.message}`;
+    } else {
+      colorsMessage.textContent = "Saved. The color setting will apply when the Student Leadership page loads.";
+      adminTabViews.delete("_h");
+    }
+    colorsToggle.disabled = false;
+  };
   app.querySelectorAll("[data-role-description]").forEach(form => {
     const textarea = form.querySelector("[data-description-text]");
     const preview = form.querySelector("[data-description-preview]");

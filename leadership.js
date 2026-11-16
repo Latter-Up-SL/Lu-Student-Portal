@@ -117,11 +117,16 @@
     });
   }
 
-  function renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, skipRequest, overrides) {
+  function renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, isAdmin, roleBoxColorsEnabled, skipRequest, overrides) {
     const assignments = currentAssignments(members, roles, rotationWeekIndexForDate(weekday, weekStart), excludedEmails, overrides);
     let expandedAssignment = assignments.find(item => item.roleId === expandedRoleId
-      && item.member?.email.toLowerCase() === userEmail);
+      && (isAdmin || item.member?.email.toLowerCase() === userEmail));
     if (!expandedAssignment) expandedRoleId = null;
+    const assignmentContext = expandedAssignment?.member?.email.toLowerCase() === userEmail
+      ? `Your assignment for ${assignmentPeriodLabel}`
+      : expandedAssignment?.member
+        ? `Assigned to ${expandedAssignment.member.display_name} for ${assignmentPeriodLabel}`
+        : `No one is assigned for ${assignmentPeriodLabel}`;
     const chartTitle = expandedAssignment
       ? expandedAssignment.role
       : assignmentPeriodLabel === "the next meeting" ? "Assignments for the next meeting" : "Weekly assignments";
@@ -131,17 +136,19 @@
         ${expandedAssignment ? "" : `<span class="leadership-rotation-badge">${LUIcon("clock", 17)} Updates on: ${weekdayNames[weekday]}</span>`}
       </div>
       ${expandedAssignment ? `<div class="leadership-role-detail">
-        <p class="leadership-role-detail-assignee">Your assignment for ${esc(assignmentPeriodLabel)}</p>
+        <p class="leadership-role-detail-assignee">${esc(assignmentContext)}</p>
         <div class="leadership-role-description">${roleDescriptionHtml(expandedAssignment.description)}</div>
         <button class="auth-btn alt" type="button" data-collapse-role>Back to weekly assignments</button>
       </div>` : `<div class="leadership-chart" aria-label="Weekly Student Leadership roles">
         ${assignments.map(({ roleId, role, member }, index) => {
           const isCurrentUser = member && member.email.toLowerCase() === userEmail;
+          const canOpenRole = isAdmin || isCurrentUser;
+          const isHighlighted = isCurrentUser && (roleBoxColorsEnabled || isAdmin);
           const cardContent = `<span class="leadership-role-number">0${index + 1}</span>
             <div class="leadership-role-copy"><h3>${esc(role)}</h3>
               <p>${member ? esc(member.display_name) : "No one assigned this week"}</p></div>`;
-          return `<article class="leadership-role-card${isCurrentUser ? " is-current-user" : ""}">
-            ${isCurrentUser
+          return `<article class="leadership-role-card${isHighlighted ? " is-highlighted-role" : ""}">
+            ${canOpenRole
               ? `<button class="leadership-role-card-trigger" type="button" data-expand-role="${esc(roleId)}">${cardContent}</button>`
               : cardContent}
             ${isCurrentUser
@@ -156,12 +163,12 @@
     </section>`;
     host.querySelectorAll("[data-expand-role]").forEach(button => button.onclick = () => {
       expandedRoleId = button.dataset.expandRole;
-      renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, skipRequest, overrides);
+      renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, isAdmin, roleBoxColorsEnabled, skipRequest, overrides);
     });
     const collapseButton = host.querySelector("[data-collapse-role]");
     if (collapseButton) collapseButton.onclick = () => {
       expandedRoleId = null;
-      renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, skipRequest, overrides);
+      renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, isAdmin, roleBoxColorsEnabled, skipRequest, overrides);
     };
   }
 
@@ -179,8 +186,8 @@
       return;
     }
 
-    const settingsResult = await sb.from("leadership_hub_settings").select("rotation_weekday,approval_points,visibility,rotation_paused,rotation_pause_reason,next_meeting_date,show_chat_reports,show_prizes").eq("id", 1).single();
-    if (settingsResult.error) return showError(app, `The Student Leadership hub could not load: ${settingsResult.error.message}. Ask an admin to run update-10-student-leadership-hub.sql, update-19-leadership-rotation-pause.sql, and update-23-leadership-visibility-and-prize-fulfillment.sql.`);
+    const settingsResult = await sb.from("leadership_hub_settings").select("rotation_weekday,approval_points,visibility,rotation_paused,rotation_pause_reason,next_meeting_date,show_chat_reports,show_prizes,role_box_colors_enabled").eq("id", 1).single();
+    if (settingsResult.error) return showError(app, `The Student Leadership hub could not load: ${settingsResult.error.message}. Ask an admin to run update-10-student-leadership-hub.sql, update-19-leadership-rotation-pause.sql, update-23-leadership-visibility-and-prize-fulfillment.sql, and update-29-leadership-role-box-colors.sql.`);
     const mayViewHub = settingsResult.data.visibility === "leaders_admins"
       || (settingsResult.data.visibility === "admins" && role === "admin");
     if (!mayViewHub) {
@@ -250,7 +257,8 @@
       renderPausedChart(chartHost, settings.rotation_pause_reason, settings.next_meeting_date, resumeDate);
     } else {
       renderChart(chartHost, members, rolesResult.data, settings.rotation_weekday, weekStart, assignmentPeriodLabel,
-        settings.next_meeting_date, excludedEmails, userEmail, skipRequestResult.data, roleOverrides);
+        settings.next_meeting_date, excludedEmails, userEmail, role === "admin",
+        settings.role_box_colors_enabled !== false, skipRequestResult.data, roleOverrides);
     }
     document.querySelectorAll("[data-request-week-off]").forEach(button => button.onclick = async () => {
       const reason = prompt(`Please explain why you need to be removed from ${assignmentPeriodLabel}'s Student Leadership rotation (up to 500 characters).`);
