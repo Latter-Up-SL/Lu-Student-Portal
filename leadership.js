@@ -143,7 +143,7 @@
         ${assignments.map(({ roleId, role, member }, index) => {
           const isCurrentUser = member && member.email.toLowerCase() === userEmail;
           const canOpenRole = isAdmin || isCurrentUser;
-          const isHighlighted = isCurrentUser && (roleBoxColorsEnabled || isAdmin);
+          const isHighlighted = !isAdmin && isCurrentUser && roleBoxColorsEnabled;
           const cardContent = `<span class="leadership-role-number">0${index + 1}</span>
             <div class="leadership-role-copy"><h3>${esc(role)}</h3>
               <p>${member ? esc(member.display_name) : "No one assigned this week"}</p></div>`;

@@ -823,7 +823,7 @@ async function leadershipRoleDescriptionsUI(generation = activeViewGeneration) {
     <p>Write the role details Student Leadership members see when they select their own assignment. Select text and use the toolbar to add bold or underline formatting.</p>
     <div class="role-box-color-setting">
       <label class="chk"><input id="role-box-colors-enabled" type="checkbox" ${settingsResult.data?.role_box_colors_enabled !== false ? "checked" : ""}> Change role box colors</label>
-      <small id="role-box-colors-message">When enabled, role holders see their own assignment highlighted. Admins can always open any role tile; an admin's own assignment stays highlighted even when this is off.</small>
+      <small id="role-box-colors-message">When enabled, non-admin role holders see their own assignment highlighted. Admins can always open any role tile, but their role boxes stay neutral.</small>
     </div>
     ${error
       ? `<p class="auth-error">Role descriptions or color settings could not load: ${esc(error.message)}. Run supabase/update-28-leadership-role-descriptions.sql and supabase/update-29-leadership-role-box-colors.sql in Supabase SQL Editor.</p>`

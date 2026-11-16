@@ -15,7 +15,7 @@ After update 25, also apply `supabase/update-26-leadership-meeting-date-backfill
 
 The password-change page and forced-password flow have been removed. Apply `supabase/update-27-content-email-and-password-removal.sql` to clear old account flags and restore the normal Google sign-in access policies. If the `change-own-password` Edge Function was deployed previously, remove that unused function from the Supabase project.
 
-After applying `supabase/update-28-leadership-role-descriptions.sql`, admins can edit role descriptions in Admin → SL Role Descriptions. Student Leadership members can select their own highlighted assignment to read its description; the editor supports bold and underlined text. After applying `supabase/update-29-leadership-role-box-colors.sql`, admins can toggle role-box highlighting in the same tab. Admins can select any role tile to view its description.
+After applying `supabase/update-28-leadership-role-descriptions.sql`, admins can edit role descriptions in Admin → SL Role Descriptions. Student Leadership members can select their own highlighted assignment to read its description; the editor supports bold and underlined text. After applying `supabase/update-29-leadership-role-box-colors.sql`, admins can toggle role-box highlighting for non-admin role holders in the same tab. Admins can select any role tile to view its description; admin role tiles remain neutral.
 
 Your Schedule and the Student Raffle are available to signed-in users only. The navigation and footer links and homepage schedule embed stay hidden while signed out, direct visits send the user to sign in, and embeds are not loaded until a session is present. Any signed-in user can access them.
 
