@@ -136,7 +136,7 @@
         catch(error) { console.warn("Banner dismissal could not be read:",error); }
       }
       const dismissed=!dismissalLoadError&&dismissal?.fingerprint===fingerprint&&Number(dismissal.until)>Date.now();
-      host.innerHTML=`<div class="wrap portal-announcement-inner"><span>${esc(banner.text)}</span>${banner.link_text&&banner.link_url?`<a href="${esc(safeUrl(banner.link_url))}" ${/^https?:/i.test(banner.link_url)?'target="_blank" rel="noopener"':''}>${esc(banner.link_text)} ↗</a>`:""}<button class="portal-banner-dismiss" type="button" aria-label="Dismiss this banner until 6 AM tomorrow">Dismiss for today</button></div>`;
+      host.innerHTML=`<div class="wrap portal-announcement-inner"><span>${esc(banner.text)}</span>${banner.link_text&&banner.link_url?`<a href="${esc(safeUrl(banner.link_url))}" ${/^https?:/i.test(banner.link_url)?'target="_blank" rel="noopener"':''}>${esc(banner.link_text)} ↗</a>`:""}<button class="portal-banner-dismiss" type="button" aria-label="Dismiss this banner until 6 AM tomorrow">Dismiss</button></div>`;
       host.hidden=dismissed;
       const dismissButton=host.querySelector(".portal-banner-dismiss");
       dismissButton.onclick=()=>{

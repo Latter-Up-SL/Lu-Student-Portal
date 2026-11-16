@@ -115,7 +115,7 @@
     host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
       <div class="leadership-section-heading">
         <div><h2 id="weekly-chart-title">${chartTitle}</h2></div>
-        <span class="leadership-rotation-badge">${LUIcon("clock", 17)} Rotates ${weekdayNames[weekday]}</span>
+        <span class="leadership-rotation-badge">${LUIcon("clock", 17)} Updates on: ${weekdayNames[weekday]}</span>
       </div>
       <div class="leadership-chart" aria-label="Weekly Student Leadership roles">
         ${assignments.map(({ role, member }, index) => `<article class="leadership-role-card">
