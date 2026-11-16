@@ -6,6 +6,14 @@
     host.innerHTML = `<p class="auth-error">${esc(message)}</p>`;
   };
   const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  let expandedRoleId = null;
+
+  function roleDescriptionHtml(value) {
+    return esc(value || "No description has been added for this role yet.")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/__(.+?)__/g, "<u>$1</u>")
+      .replace(/\r?\n/g, "<br>");
+  }
 
   function rotationWeekIndexForDate(weekday, dateString) {
     const date = Date.parse(`${dateString}T00:00:00Z`);
@@ -62,26 +70,26 @@
     const assigned = new Set();
     return roles.map((role, roleIndex) => {
       if (overrides.has(role.id) && overrides.get(role.id) === null) {
-        return { role: role.name, member: null };
+        return { roleId: role.id, role: role.name, description: role.description, member: null };
       }
       const pinnedEmail = overrides.get(role.id);
       if (pinnedEmail) {
         const member = members.find(candidate => candidate.email.toLowerCase() === pinnedEmail);
         if (member) {
           assigned.add(member.email.toLowerCase());
-          return { role: role.name, member };
+          return { roleId: role.id, role: role.name, description: role.description, member };
         }
       }
       const candidates = members.filter(member =>
         member.in_cycle && !excludedEmails.has(member.email.toLowerCase())
         && member.roles.includes(role.name)
       );
-      if (!candidates.length) return { role: role.name, member: null };
+      if (!candidates.length) return { roleId: role.id, role: role.name, description: role.description, member: null };
       const start = (weekIndex + roleIndex) % candidates.length;
       const rotated = candidates.map((_, index) => candidates[(start + index) % candidates.length]);
       const member = rotated.find(candidate => !assigned.has(candidate.email.toLowerCase())) || candidates[start];
       assigned.add(member.email.toLowerCase());
-      return { role: role.name, member };
+      return { roleId: role.id, role: role.name, description: role.description, member };
     });
   }
 
@@ -111,26 +119,50 @@
 
   function renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, skipRequest, overrides) {
     const assignments = currentAssignments(members, roles, rotationWeekIndexForDate(weekday, weekStart), excludedEmails, overrides);
-    const chartTitle = assignmentPeriodLabel === "the next meeting" ? "Assignments for the next meeting" : "Weekly assignments";
+    let expandedAssignment = assignments.find(item => item.roleId === expandedRoleId
+      && item.member?.email.toLowerCase() === userEmail);
+    if (!expandedAssignment) expandedRoleId = null;
+    const chartTitle = expandedAssignment
+      ? expandedAssignment.role
+      : assignmentPeriodLabel === "the next meeting" ? "Assignments for the next meeting" : "Weekly assignments";
     host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
       <div class="leadership-section-heading">
-        <div><h2 id="weekly-chart-title">${chartTitle}</h2></div>
-        <span class="leadership-rotation-badge">${LUIcon("clock", 17)} Updates on: ${weekdayNames[weekday]}</span>
+        <div><h2 id="weekly-chart-title">${esc(chartTitle)}</h2></div>
+        ${expandedAssignment ? "" : `<span class="leadership-rotation-badge">${LUIcon("clock", 17)} Updates on: ${weekdayNames[weekday]}</span>`}
       </div>
-      <div class="leadership-chart" aria-label="Weekly Student Leadership roles">
-        ${assignments.map(({ role, member }, index) => `<article class="leadership-role-card">
-          <span class="leadership-role-number">0${index + 1}</span>
-          <div class="leadership-role-copy"><h3>${esc(role)}</h3>
-            <p>${member ? esc(member.display_name) : "No one assigned this week"}</p>
-            ${member && member.email.toLowerCase() === userEmail && !excludedEmails.has(userEmail)
+      ${expandedAssignment ? `<div class="leadership-role-detail">
+        <p class="leadership-role-detail-assignee">Your assignment for ${esc(assignmentPeriodLabel)}</p>
+        <div class="leadership-role-description">${roleDescriptionHtml(expandedAssignment.description)}</div>
+        <button class="auth-btn alt" type="button" data-collapse-role>Back to weekly assignments</button>
+      </div>` : `<div class="leadership-chart" aria-label="Weekly Student Leadership roles">
+        ${assignments.map(({ roleId, role, member }, index) => {
+          const isCurrentUser = member && member.email.toLowerCase() === userEmail;
+          const cardContent = `<span class="leadership-role-number">0${index + 1}</span>
+            <div class="leadership-role-copy"><h3>${esc(role)}</h3>
+              <p>${member ? esc(member.display_name) : "No one assigned this week"}</p></div>`;
+          return `<article class="leadership-role-card${isCurrentUser ? " is-current-user" : ""}">
+            ${isCurrentUser
+              ? `<button class="leadership-role-card-trigger" type="button" data-expand-role="${esc(roleId)}">${cardContent}</button>`
+              : cardContent}
+            ${isCurrentUser
               ? skipRequest?.status
                 ? `<small class="leadership-skip-status">Week-off request ${esc(skipRequest.status)}${skipRequest.status === "rejected" ? ". Contact an admin if you still need help." : "."}</small>`
                 : `<button class="auth-btn alt leadership-skip-request" type="button" data-request-week-off>Request ${esc(assignmentPeriodLabel)} off</button>`
-              : ""}</div>
-        </article>`).join("")}
-      </div>
+              : ""}
+          </article>`;
+        }).join("")}
+      </div>`}
       <p class="leadership-next-meeting"><strong>Next meeting:</strong> ${esc(meetingDateLabel(nextMeetingDate))}</p>
     </section>`;
+    host.querySelectorAll("[data-expand-role]").forEach(button => button.onclick = () => {
+      expandedRoleId = button.dataset.expandRole;
+      renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, skipRequest, overrides);
+    });
+    const collapseButton = host.querySelector("[data-collapse-role]");
+    if (collapseButton) collapseButton.onclick = () => {
+      expandedRoleId = null;
+      renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, skipRequest, overrides);
+    };
   }
 
   async function load() {
@@ -174,14 +206,14 @@
     const userEmail = (session.user.email || "").toLowerCase();
     const [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult, overridesResult] = await Promise.all([
       sb.from("leadership_chart_members").select("email,display_name,in_cycle,sort_order").order("sort_order").order("display_name"),
-      sb.from("leadership_chart_roles").select("id,name,sort_order").order("sort_order").order("name"),
+      sb.from("leadership_chart_roles").select("id,name,description,sort_order").order("sort_order").order("name"),
       sb.from("leadership_member_roles").select("member_email,role_id"),
       sb.from("leadership_rotation_exclusions").select("member_email").eq("week_start", weekStart),
       sb.from("leadership_rotation_skip_requests").select("status").eq("week_start", weekStart).eq("member_email", userEmail).maybeSingle(),
       sb.from("leadership_role_overrides").select("role_id,member_email,is_unassigned").eq("week_start", weekStart),
     ]);
     const failed = [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult, overridesResult].find(result => result.error);
-    if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql, update-12-leadership-role-overrides-and-photo-alerts.sql, and update-25-leadership-empty-roles-and-meeting-date.sql.`);
+    if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql, update-12-leadership-role-overrides-and-photo-alerts.sql, update-25-leadership-empty-roles-and-meeting-date.sql, and update-28-leadership-role-descriptions.sql.`);
     const roleNames = new Map(rolesResult.data.map(item => [item.id, item.name]));
     const assignments = new Map();
     assignmentsResult.data.forEach(item => {
@@ -213,6 +245,7 @@
     app.innerHTML = `<div id="weekly-role-chart"></div>${reportChatSection}${prizesSection}`;
     const excludedEmails = new Set(exclusionsResult.data.map(item => item.member_email.toLowerCase()));
     const chartHost = document.getElementById("weekly-role-chart");
+    expandedRoleId = null;
     if (rotationPausedNow) {
       renderPausedChart(chartHost, settings.rotation_pause_reason, settings.next_meeting_date, resumeDate);
     } else {

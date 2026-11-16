@@ -1034,9 +1034,19 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .leadership-chart { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr)); justify-items:stretch; align-items:stretch; gap:.8rem; width:100%; min-width:0; }
 .leadership-chart-section { width:100%; min-width:0; }
 .leadership-role-card { position:relative; display:flex; width:100%; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:.65rem; min-height:140px; padding:1rem; overflow:hidden; border:1px solid var(--stone-line); border-radius:15px; background:linear-gradient(135deg,var(--surface),color-mix(in srgb,var(--tint) 48%,var(--surface))); text-align:center; }
+.leadership-role-card.is-current-user { border-color:#e1a730; background:#fff1b8; }
+.leadership-role-card.is-current-user:hover,.leadership-role-card.is-current-user:focus-within { border-color:#8ec9e8; background:#dff2ff; }
+.leadership-role-card-trigger { display:flex; width:100%; flex-direction:column; align-items:center; gap:.65rem; padding:0; border:0; background:transparent; color:inherit; font:inherit; text-align:center; cursor:pointer; }
+.leadership-role-card-trigger:focus-visible { outline:3px solid #4388b5; outline-offset:4px; border-radius:8px; }
 .leadership-role-number { display:grid; width:46px; height:46px; flex:none; place-items:center; border-radius:14px; background:var(--gold); color:var(--navy); font-size:.9rem; font-weight:800; }
 .leadership-role-copy h3 { margin:0 0 .3rem; color:var(--stone); font-size:.77rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
 .leadership-role-copy p { margin:0; color:var(--navy); font-size:1.12rem; font-weight:700; }
+.leadership-role-detail { display:grid; justify-items:center; gap:1rem; min-height:230px; padding:clamp(1.25rem,4vw,3rem); border:1px solid var(--stone-line); border-radius:15px; background:var(--tint); text-align:center; }
+.leadership-role-detail-assignee { margin:0!important; color:var(--stone); font-size:.9rem; font-weight:700; }
+.leadership-role-description { width:min(100%,70ch); color:var(--navy); font-size:1.05rem; line-height:1.75; text-align:left; overflow-wrap:anywhere; }
+.leadership-role-description:empty { display:none; }
+.leadership-role-description strong { font-weight:800; }
+.leadership-role-description u { text-underline-offset:.18em; }
 .leadership-skip-request { margin-top:.5rem; }
 .leadership-skip-status { display:block; margin-top:.5rem; color:var(--stone); }
 .leadership-chart-note { margin:1rem 0 0; color:var(--stone); font-size:.83rem; text-align:center; }
@@ -1071,6 +1081,12 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .leadership-role-management { margin:1.25rem 0; padding:1rem; border:1px solid var(--stone-line); border-radius:14px; background:var(--surface); }
 .leadership-role-management h4 { margin:.25rem 0; color:var(--navy); }
 .leadership-role-management>p { color:var(--stone); }
+.leadership-role-description-editor { display:grid; gap:.75rem; margin:1rem 0; padding:1rem; border:1px solid var(--stone-line); border-radius:14px; background:var(--surface); }
+.leadership-role-description-editor h3 { margin:0; }
+.role-description-toolbar { display:flex; flex-wrap:wrap; gap:.5rem; }
+.role-description-preview-label { color:var(--stone); font-size:.8rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; }
+.role-description-preview { min-height:3rem; padding:.85rem 1rem; border:1px solid var(--stone-line); border-radius:10px; background:var(--tint); color:var(--navy); line-height:1.6; overflow-wrap:anywhere; }
+.role-description-preview:empty { display:none; }
 .leadership-role-admin-row { display:grid; grid-template-columns:minmax(180px,1fr) 120px auto minmax(100px,auto); align-items:end; gap:.75rem; padding:.75rem 0; border-bottom:1px solid var(--stone-line); }
 .leadership-role-admin-row label { display:grid; gap:.35rem; color:var(--navy); font-size:.86rem; font-weight:700; }
 .leadership-role-admin-row input { min-width:0; padding:.55rem; border:1px solid var(--stone-line); border-radius:8px; }

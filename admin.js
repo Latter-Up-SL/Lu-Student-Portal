@@ -6,7 +6,7 @@ const T = {
   faq: { label: "FAQ", order: "sort_order", asc: 1, title: "question", f: [["question", "Question"], ["answer", "Answer (links and line breaks OK)", "textarea"], ["sort_order", "Order (1 = first)", "number"]] },
   themes: { label: "Photo Challenge", order: "starts_at", title: "title", f: [["title", "Theme"], ["description", "Description", "textarea"], ["starts_at", "Starts", "datetime"], ["ends_at", "Ends (next theme starts then)", "datetime"], ["video_path", "Finished video (optional)", "file", "video/mp4,video/webm"]] },
 };
-const DEFAULT_ADMIN_TAB_ORDER = ["announcements", "videos", "themes", "_h", "home", "_s", "_a", "_n"];
+const DEFAULT_ADMIN_TAB_ORDER = ["announcements", "videos", "themes", "_h", "_r", "home", "_s", "_a", "_n"];
 let cur = "announcements", ROLE = "student";
 let ADMIN_TAB_ORDER = DEFAULT_ADMIN_TAB_ORDER.slice(), ADMIN_TAB_ORDER_ERROR = "";
 let leadershipAssignmentsOpen = false;
@@ -157,7 +157,8 @@ function tabs() {
   const keys = ROLE === "admin" ? Object.keys(T).filter(k => k !== "faq") : ["announcements", "videos", "themes"];
   const entries = keys.map(key => ({ id: key, label: T[key].label }));
   if (ROLE === "admin") entries.push(
-    { id: "_h", label: "Student Leadership" }, { id: "home", label: "Home Page" },
+    { id: "_h", label: "Student Leadership" }, { id: "_r", label: "SL Role Descriptions" },
+    { id: "home", label: "Home Page" },
     { id: "_s", label: "Students" }, { id: "_a", label: "Admins" }, { id: "_n", label: "Email alerts" }
   );
   const entryMap = new Map(entries.map(entry => [entry.id, entry]));
@@ -210,6 +211,7 @@ function renderCurrentTab(generation) {
   if (cur === "home") return homeTabUI(generation);
   if (cur === "_s") return studentsUI("", generation);
   if (cur === "_h") return studentLeadershipUI(generation);
+  if (cur === "_r") return leadershipRoleDescriptionsUI(generation);
   if (cur === "_a") return peopleUI("admins", "Admins", "Admins can do everything on the site. The person needs to sign in with Google once to create their student account first.", "Give admin access to", "Make admin", generation);
   if (cur === "_n") return alertsUI(generation);
   return listUI(cur, app, generation);
@@ -800,6 +802,73 @@ async function peopleUI(table, heading, blurb, addLabel, btnText, generation = a
     }
   };
 }
+
+function roleDescriptionHtml(value) {
+  return esc(value || "No description has been added for this role yet.")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/__(.+?)__/g, "<u>$1</u>")
+    .replace(/\r?\n/g, "<br>");
+}
+
+async function leadershipRoleDescriptionsUI(generation = activeViewGeneration) {
+  const { data: roles, error } = await sb.from("leadership_chart_roles")
+    .select("id,name,description").order("sort_order").order("name");
+  if (!isCurrentView(generation)) return;
+  app.innerHTML = tabs() + `<section class="portal-admin-section">
+    <h2>SL Role Descriptions</h2>
+    <p>Write the role details Student Leadership members see when they select their own assignment. Select text and use the toolbar to add bold or underline formatting.</p>
+    ${error
+      ? `<p class="auth-error">Role descriptions could not load: ${esc(error.message)}. Run supabase/update-28-leadership-role-descriptions.sql in Supabase SQL Editor.</p>`
+      : roles.length
+        ? roles.map(role => `<form class="leadership-role-description-editor" data-role-description="${esc(role.id)}">
+          <h3>${esc(role.name)}</h3>
+          <label>Description<textarea data-description-text rows="6" maxlength="5000" placeholder="Describe this role...">${esc(role.description || "")}</textarea></label>
+          <div class="role-description-toolbar" aria-label="Description formatting">
+            <button class="auth-btn alt" type="button" data-description-format="bold"><strong>B</strong> Bold</button>
+            <button class="auth-btn alt" type="button" data-description-format="underline"><u>U</u> Underline</button>
+          </div>
+          <div class="role-description-preview-label">Student preview</div>
+          <div class="role-description-preview" data-description-preview>${roleDescriptionHtml(role.description)}</div>
+          <div><button class="auth-btn" type="submit">Save description</button><small data-description-message role="status"></small></div>
+        </form>`).join("")
+        : "<p>No Student Leadership roles have been added yet.</p>"}
+  </section>`;
+  wire();
+  app.querySelectorAll("[data-role-description]").forEach(form => {
+    const textarea = form.querySelector("[data-description-text]");
+    const preview = form.querySelector("[data-description-preview]");
+    const message = form.querySelector("[data-description-message]");
+    textarea.oninput = () => { preview.innerHTML = roleDescriptionHtml(textarea.value); };
+    form.querySelectorAll("[data-description-format]").forEach(button => {
+      button.onmousedown = event => event.preventDefault();
+      button.onclick = () => {
+        const start = textarea.selectionStart, end = textarea.selectionEnd;
+        const selected = textarea.value.slice(start, end);
+        const markers = button.dataset.descriptionFormat === "bold" ? ["**", "**"] : ["__", "__"];
+        const replacement = `${markers[0]}${selected || "text"}${markers[1]}`;
+        textarea.setRangeText(replacement, start, end, "select");
+        textarea.focus();
+        textarea.oninput();
+      };
+    });
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const button = form.querySelector('[type="submit"]');
+      button.disabled = true;
+      const { error: saveError } = await sb.from("leadership_chart_roles")
+        .update({ description: textarea.value.trim() }).eq("id", form.dataset.roleDescription);
+      if (saveError) {
+        message.textContent = `Could not save this description: ${saveError.message}`;
+        button.disabled = false;
+        return;
+      }
+      message.textContent = "Description saved.";
+      adminTabViews.delete("_h");
+      button.disabled = false;
+    };
+  });
+}
+
 async function studentLeadershipUI(generation = activeViewGeneration) {
   const [settingsResult, membersResult, rolesResult, assignmentResult, reportsResult, prizesResult, claimsResult] = await Promise.all([
     sb.from("leadership_hub_settings").select("*").eq("id", 1).single(),
